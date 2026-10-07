@@ -1,0 +1,24 @@
+﻿# Virtual environment
+venv/
+
+# Raw data (too large for git; document how to obtain it instead)
+data/raw/*
+!data/raw/.gitkeep
+
+# Processed data — optional to track; keeping for now since it's small (id+target only)
+# Uncomment below if processed files grow large later
+# data/processed/*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Logs from our debugging sessions — not needed in the repo
+run*.log
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
