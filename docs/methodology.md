@@ -168,3 +168,29 @@ naive resolved-loan sample over-represented loans that failed quickly,
 inflating the apparent bad rate. The maturity-filtered sample is
 considered the more reliable, representative estimate of true
 portfolio-level default risk.
+
+---
+
+## 6. Leakage audit and feature eligibility
+
+A PD model may only use information available at loan origination.
+All 151 raw columns were classified (`notebooks/07_leakage_audit.py`,
+output in `reports/column_classification.csv`):
+
+| Category | Columns | Treatment |
+|---|---|---|
+| Origination candidates | 100 | Eligible, subject to in-sample availability check |
+| Post-origination leakage | 38 | Excluded (payment history, balances, recoveries, hardship and settlement fields, last-pull dates) |
+| ID / target | 5 | Excluded |
+| High-cardinality text | 4 | `emp_title`, `title`, `desc`, `zip_code`: special handling or exclusion |
+| Lender-assigned | 3 | `grade`, `sub_grade`, `int_rate`: Lending Club's own risk output, so kept out of the primary model and reserved as a benchmark |
+| Time reference | 1 | `issue_d`: used for time-based splitting, not as a predictor |
+
+Notable: `last_fico_range_high/low` look like ordinary FICO scores but
+are pulled after origination, so they are excluded; only
+`fico_range_low/high` at application are valid.
+
+Open question: several candidate fields were only collected for later
+vintages, so full-file missingness can overstate availability in the
+maturity-filtered sample. Availability is therefore re-measured within
+the modeling sample before any treatment decisions are made.
