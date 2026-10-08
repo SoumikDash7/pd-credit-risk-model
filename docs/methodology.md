@@ -194,3 +194,31 @@ Open question: several candidate fields were only collected for later
 vintages, so full-file missingness can overstate availability in the
 maturity-filtered sample. Availability is therefore re-measured within
 the modeling sample before any treatment decisions are made.
+
+---
+
+## 7. In-sample missingness and treatment plan
+
+Missingness was re-measured inside the 696,232-loan modeling sample
+(`notebooks/08_sample_missingness.py`; outputs
+`reports/sample_missingness.csv` and
+`reports/sample_missingness_by_year.csv`). Full-file missingness
+overstated availability: many fields were only collected for later
+vintages, and the maturity filter removes those vintages.
+
+| In-sample missingness | Columns | Treatment |
+|---|---|---|
+| >=99.9% (`sec_app_*`, `*_joint`) | 16 | Drop: joint applications essentially absent in this window |
+| ~95% (`open_acc_6m`, `il_util`, `all_util`, `inq_last_12m`, etc.) | 14 | Drop: field not collected for these vintages; imputation would fabricate data |
+| 51-85% (`mths_since_*` delinquency fields) | 5 | No imputation: missing is interpreted as "event never occurred"; indicator flag plus dedicated bin |
+| 10-17% | 3 | Pending by-year analysis |
+| <10% | 62 | Standard imputation, fitted on training data only, after checking vintage clustering |
+
+Limitation (for the validation report): the dropped bureau fields are
+only populated for recent loans that have not matured, so they cannot
+be labeled. The model reflects what is learnable from mature vintages.
+
+Sample composition note: from 2014 onward the sample contains only
+36-month loans (60-month loans appear only through 2013), and 2015
+alone is about 41% of the sample. This affects the train/test split
+design.
