@@ -1,0 +1,67 @@
+feature,source,kind,treatment,pct_missing_train,single_feature_auc
+loan_amnt,loan_amnt,numeric,as-is,0.0,0.5198
+installment,installment,numeric,as-is,0.0,0.5059
+annual_inc,annual_inc,numeric,"winsorised at train p0.1/p99.9 [1.004e+04, 5.063e+05]",0.0,0.5806
+dti,dti,numeric,"negative values set to NaN; winsorised at train p0.1/p99.9 [0.44, 39.65]",0.0,0.5675
+delinq_2yrs,delinq_2yrs,numeric,as-is,0.0,0.5066
+inq_last_6mths,inq_last_6mths,numeric,as-is,0.0,0.5464
+mths_since_last_delinq,mths_since_last_delinq,numeric,as-is,50.51,0.5043
+mths_since_last_record,mths_since_last_record,numeric,as-is,82.81,0.508
+open_acc,open_acc,numeric,as-is,0.0,0.5068
+pub_rec,pub_rec,numeric,as-is,0.0,0.5125
+revol_bal,revol_bal,numeric,"winsorised at train p0.1/p99.9 [0, 2.56e+05]",0.0,0.5361
+revol_util,revol_util,numeric,"winsorised at train p0.1/p99.9 [0, 102.8]",0.04,0.5337
+total_acc,total_acc,numeric,as-is,0.0,0.5233
+collections_12_mths_ex_med,collections_12_mths_ex_med,numeric,as-is,0.0,0.502
+mths_since_last_major_derog,mths_since_last_major_derog,numeric,as-is,72.76,0.51
+acc_now_delinq,acc_now_delinq,numeric,as-is,0.0,0.5008
+tot_coll_amt,tot_coll_amt,numeric,"winsorised at train p0.1/p99.9 [0, 2.351e+04]",0.0,0.5095
+tot_cur_bal,tot_cur_bal,numeric,"winsorised at train p0.1/p99.9 [546, 1.197e+06]",0.0,0.565
+total_rev_hi_lim,total_rev_hi_lim,numeric,"winsorised at train p0.1/p99.9 [800, 3.232e+05]",0.0,0.5646
+acc_open_past_24mths,acc_open_past_24mths,numeric,as-is,0.0,0.5749
+avg_cur_bal,avg_cur_bal,numeric,"winsorised at train p0.1/p99.9 [107, 1.39e+05]",0.0,0.5729
+bc_open_to_buy,bc_open_to_buy,numeric,"winsorised at train p0.1/p99.9 [0, 1.238e+05]",1.0,0.575
+bc_util,bc_util,numeric,as-is,1.06,0.5459
+chargeoff_within_12_mths,chargeoff_within_12_mths,numeric,as-is,0.0,0.5001
+delinq_amnt,delinq_amnt,numeric,"winsorised at train p0.1/p99.9 [0, 667.9]",0.0,0.5006
+mo_sin_old_il_acct,mo_sin_old_il_acct,numeric,as-is,3.79,0.5349
+mo_sin_old_rev_tl_op,mo_sin_old_rev_tl_op,numeric,as-is,0.0,0.551
+mo_sin_rcnt_rev_tl_op,mo_sin_rcnt_rev_tl_op,numeric,as-is,0.0,0.5516
+mo_sin_rcnt_tl,mo_sin_rcnt_tl,numeric,as-is,0.0,0.5567
+mort_acc,mort_acc,numeric,as-is,0.0,0.5597
+mths_since_recent_bc,mths_since_recent_bc,numeric,as-is,0.91,0.551
+mths_since_recent_bc_dlq,mths_since_recent_bc_dlq,numeric,as-is,74.3,0.5005
+mths_since_recent_inq,mths_since_recent_inq,numeric,as-is,10.33,0.5442
+mths_since_recent_revol_delinq,mths_since_recent_revol_delinq,numeric,as-is,64.99,0.5012
+num_accts_ever_120_pd,num_accts_ever_120_pd,numeric,as-is,0.0,0.5112
+num_actv_bc_tl,num_actv_bc_tl,numeric,as-is,0.0,0.5165
+num_actv_rev_tl,num_actv_rev_tl,numeric,as-is,0.0,0.5415
+num_bc_sats,num_bc_sats,numeric,as-is,0.0,0.5004
+num_bc_tl,num_bc_tl,numeric,as-is,0.0,0.5161
+num_il_tl,num_il_tl,numeric,as-is,0.0,0.5159
+num_op_rev_tl,num_op_rev_tl,numeric,as-is,0.0,0.5181
+num_rev_accts,num_rev_accts,numeric,as-is,0.0,0.5086
+num_rev_tl_bal_gt_0,num_rev_tl_bal_gt_0,numeric,as-is,0.0,0.5411
+num_sats,num_sats,numeric,as-is,0.0,0.5069
+num_tl_120dpd_2m,num_tl_120dpd_2m,numeric,as-is,2.85,0.5
+num_tl_30dpd,num_tl_30dpd,numeric,as-is,0.0,0.5006
+num_tl_90g_dpd_24m,num_tl_90g_dpd_24m,numeric,as-is,0.0,0.5034
+num_tl_op_past_12m,num_tl_op_past_12m,numeric,as-is,0.0,0.5681
+pct_tl_nvr_dlq,pct_tl_nvr_dlq,numeric,as-is,0.03,0.5071
+percent_bc_gt_75,percent_bc_gt_75,numeric,as-is,1.04,0.5496
+pub_rec_bankruptcies,pub_rec_bankruptcies,numeric,as-is,0.0,0.5095
+tax_liens,tax_liens,numeric,as-is,0.0,0.5014
+tot_hi_cred_lim,tot_hi_cred_lim,numeric,"winsorised at train p0.1/p99.9 [3500, 1.346e+06]",0.0,0.5766
+total_bal_ex_mort,total_bal_ex_mort,numeric,"winsorised at train p0.1/p99.9 [260, 4.096e+05]",0.0,0.5225
+total_bc_limit,total_bc_limit,numeric,"winsorised at train p0.1/p99.9 [0, 1.613e+05]",0.0,0.573
+total_il_high_credit_limit,total_il_high_credit_limit,numeric,"winsorised at train p0.1/p99.9 [0, 3.367e+05]",0.0,0.5165
+fico_mean,"fico_range_low, fico_range_high",numeric,midpoint of the application FICO range,0.0,0.5971
+credit_history_months,"earliest_cr_line, issue_d",numeric,months from earliest credit line to issue date,0.0,0.541
+emp_length_yrs,emp_length,numeric,"parsed to years ('< 1 year' = 0, '10+ years' = 10); NaN kept for an Unknown bin",5.77,0.5165
+loan_to_income,"loan_amnt, annual_inc",numeric,"loan amount / annual income (income <= 0 gives NaN); winsorised at train p0.1/p99.9 [0.01309, 0.5]",0.0,0.5547
+payment_to_income,"installment, annual_inc",numeric,"monthly instalment / monthly income (income <= 0 gives NaN); winsorised at train p0.1/p99.9 [0.005338, 0.2141]",0.0,0.5686
+home_ownership,home_ownership,categorical,levels under 0.2% of train grouped to OTHER,0.0,
+verification_status,verification_status,categorical,levels under 0.2% of train grouped to OTHER,0.0,
+purpose,purpose,categorical,levels under 0.2% of train grouped to OTHER,0.0,
+addr_state,addr_state,categorical,levels under 0.2% of train grouped to OTHER,0.0,
+initial_list_status,initial_list_status,categorical,levels under 0.2% of train grouped to OTHER,0.0,

@@ -24,3 +24,5 @@ Thumbs.db
 .vscode/
 data/processed/development_sample_ids_target.csv
 data/processed/development_split.csv
+data/processed/features.parquet
+data/processed/features.parquet

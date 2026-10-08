@@ -360,3 +360,60 @@ to 7.3% (2015Q4) with a ~6.8pp higher bad rate. Rough arithmetic
 (about 0.25pp) explains only about a tenth of the 2.6pp rise in bad
 rate between 2013 and 2015; most of the drift lies elsewhere.
 Associations are descriptive, not causal.
+
+
+---
+
+## 10. Feature engineering
+
+Script: notebooks/12_feature_engineering.py. Outputs:
+data/processed/features.parquet (not tracked), reports/feature_dictionary.csv,
+reports/categorical_levels.csv, reports/winsor_thresholds.csv.
+
+**Principle:** every data-dependent step (rare-level grouping,
+winsorisation caps) is fitted on train rows only and applied unchanged to
+validation and out-of-time. No imputation at this stage: NaNs stay for the
+binning step.
+
+**Kept / dropped.** Of 100 origination candidates: 30 sparse columns
+(>=90% missing) dropped; term, application_type, disbursement_method
+dropped as (near-)constant; funded_amnt (equal to loan_amnt for 100.0% of
+loans) and funded_amnt_inv (investor-funded share, equal for 92.9%) dropped
+as copies of loan_amnt or funding outcomes. zip_code, emp_title, title and
+desc are excluded (high-cardinality text; zip code is also a fair-lending
+concern). grade, sub_grade and int_rate are stored as bench_* columns only:
+they are Lending Club's own risk output and are not predictors in the
+primary model. Result: 66 features (61 numeric, 5 categorical).
+
+**Derived features.** fico_mean (midpoint of the application FICO range;
+width is 4 for 568,630 loans and 5 for 64); credit_history_months
+(earliest_cr_line to issue date; no unparseable or negative values);
+emp_length_yrs ('< 1 year' = 0, '10+ years' = 10; 35,181 NaNs, 6.2%, kept
+for an Unknown bin); loan_to_income and payment_to_income.
+
+**Data checks.** dti has no negative values; 7 loans exceed 100 although
+the train maximum is 39.99 (outside the train range, handled by the
+train-fitted cap).
+
+**Winsorisation.** 16 amount/ratio columns capped at the train 0.1th and
+99.9th percentiles (thresholds in reports/winsor_thresholds.csv). About
+0.1-0.2% of train rows are clipped per column. Several columns clip more
+out-of-time (dti 0.35% vs 0.20%, payment_to_income 0.42% vs 0.20%,
+annual_inc 0.29% vs 0.20%, total_rev_hi_lim 0.28% vs 0.19%): mild tail
+drift, to be quantified by PSI.
+
+**Categoricals.** home_ownership, verification_status, purpose, addr_state,
+initial_list_status. Levels below 0.2% of train are grouped to OTHER. The
+rule is deliberately risk-blind: an initial 1% threshold pooled purposes
+and states with different default rates, so it was lowered and risk-based
+grouping is left to the WoE stage.
+
+**Leakage tripwire.** Single-feature AUC on train: maximum 0.597
+(fico_mean), none above 0.70; benchmark int_rate 0.654. This catches gross
+leakage only; the primary control is the column-level audit in Section 6.
+
+**Still to treat:** structural NaNs get their own bin; revol_util (0.04%)
+and pct_tl_nvr_dlq (0.03%) get a train-fitted median. The credit-scale
+columns (tot_hi_cred_lim, total_bc_limit, avg_cur_bal, tot_cur_bal,
+total_rev_hi_lim, bc_open_to_buy, annual_inc) are expected to be
+collinear; variable selection will cluster them.
