@@ -195,30 +195,101 @@ vintages, so full-file missingness can overstate availability in the
 maturity-filtered sample. Availability is therefore re-measured within
 the modeling sample before any treatment decisions are made.
 
+
 ---
 
-## 7. In-sample missingness and treatment plan
+## 7. Missingness inside the modeling sample, and development scope
 
 Missingness was re-measured inside the 696,232-loan modeling sample
-(`notebooks/08_sample_missingness.py`; outputs
-`reports/sample_missingness.csv` and
-`reports/sample_missingness_by_year.csv`). Full-file missingness
-overstated availability: many fields were only collected for later
-vintages, and the maturity filter removes those vintages.
+(`notebooks/08_sample_missingness.py`, `notebooks/09_missingness_by_year_and_bad_rate.py`).
 
-| In-sample missingness | Columns | Treatment |
-|---|---|---|
-| >=99.9% (`sec_app_*`, `*_joint`) | 16 | Drop: joint applications essentially absent in this window |
-| ~95% (`open_acc_6m`, `il_util`, `all_util`, `inq_last_12m`, etc.) | 14 | Drop: field not collected for these vintages; imputation would fabricate data |
-| 51-85% (`mths_since_*` delinquency fields) | 5 | No imputation: missing is interpreted as "event never occurred"; indicator flag plus dedicated bin |
-| 10-17% | 3 | Pending by-year analysis |
-| <10% | 62 | Standard imputation, fitted on training data only, after checking vintage clustering |
+**Finding 1: availability is era-driven, not random.**
+About 30 bureau-attribute columns (`tot_cur_bal`, `num_sats`,
+`avg_cur_bal`, `mort_acc`, `total_rev_hi_lim`, ...) are 100% missing for
+2007-2011, ~52% missing in 2012, and ~0% from 2013 onward. Averaging
+over the full sample hid this (it showed as 3-10% missing). Imputing
+these would fabricate values for pre-2013 loans, so the sample window
+is cut instead.
 
-Limitation (for the validation report): the dropped bureau fields are
-only populated for recent loans that have not matured, so they cannot
-be labeled. The model reflects what is learnable from mature vintages.
+**Finding 2: later-collected fields.**
+Roughly 30 further columns (`sec_app_*`, `*_joint`, `open_acc_6m`,
+`il_util`, `all_util`, `inq_last_12m`, ...) are >=94% missing in the
+sample because they were only populated for late-2015+ loans (or joint
+applications). They are dropped. Limitation: they exist only for loans
+too recent to have outcomes, so the model reflects what is learnable
+from mature vintages.
 
-Sample composition note: from 2014 onward the sample contains only
-36-month loans (60-month loans appear only through 2013), and 2015
-alone is about 41% of the sample. This affects the train/test split
-design.
+**Finding 3: 60-month loans.**
+60-month loans default at 21-28% vs 10-15% for 36-month loans, and
+appear only through 2013 because later ones have not matured. They
+could never appear in an out-of-time test.
+
+**Decision: development sample = 36-month loans issued from Jan 2013.**
+568,694 loans (from the 696,232-loan modeling sample: 93,153 pre-2013
+loans and 34,385 60-month 2013 loans removed). Exact bad rate and
+monthly counts are recorded in Section 8 after
+`notebooks/10_development_sample.py`. `term` is no longer a feature.
+Scoping a PD model to a single product is standard practice.
+
+**Population drift (noted for the PSI/validation sections):** the
+36-month bad rate rises from 12.3% (2013) to 13.7% (2014) to 14.9%
+(2015).
+
+**Remaining gaps after 2013** (`mths_since_recent_inq` ~11%,
+`mo_sin_old_il_acct` ~3.6%, `bc_util` family ~1%, `emp_length` 4-7%,
+`num_tl_120dpd_2m` 4-6%, and the `mths_since_*` delinquency fields at
+51-85%): the working hypothesis is that missing means "does not apply"
+(e.g. no installment accounts, no bankcards, no delinquency ever). This
+is tested in script 10 before any treatment is chosen. Imputation
+statistics will be fitted on training data only.
+
+
+---
+
+## 8. Development sample and missingness diagnostics
+
+Script: notebooks/10_development_sample.py. Outputs:
+reports/dev_sample_by_month.csv, reports/dev_sample_missingness.csv.
+
+**Development sample:** 36-month loans issued Jan 2013 - Jan 2016.
+568,694 loans (row-match check against the raw file passed), 80,202
+bad, **14.10% bad rate**. By issue year: 2013 100,422 loans (12.33%);
+2014 162,570 (13.73%); 2015 283,087 (14.90%); Jan 2016 22,615 (14.66%).
+
+**Candidate availability (100 candidates):** 30 are >=90% missing
+(dropped), 6 are 10-90% (`mths_since_*` fields), 5 are 1-10%, 59 are
+<1%.
+
+**Near-constant / constant (dropped):** `application_type` (99.92%
+Individual), `disbursement_method` (99.97% Cash), `term` (all 36
+months). `initial_list_status` is balanced (f 49.3% / w 50.7%) and is
+retained for now.
+
+**Does "missing" mean "does not apply"?** Missing rate by value of a
+related condition column:
+
+| Column | Condition column | Missing if 0 | Missing if >0 | Reading |
+|---|---|---|---|---|
+| mths_since_last_record | pub_rec | 100.0% | 0.0% | Structural: no public record |
+| mo_sin_old_il_acct | num_il_tl | 99.6% | 0.0% | Structural: no installment accounts |
+| mths_since_recent_inq | inq_last_6mths | 18.6% | 0.0% | Consistent with no recent inquiry; not fully verifiable (inq_last_12m dropped) |
+| mths_since_last_delinq | delinq_2yrs | 61.8% | 1.5% | Mostly structural; ~1.7K inconsistent loans |
+| mths_since_last_major_derog | num_accts_ever_120_pd | 93.0% | 3.6% | Mostly structural; ~4.9K inconsistent loans |
+| mths_since_recent_bc | num_bc_tl | 99.5% | 0.7% | Structural for ~1,055 loans; ~4K residual gaps |
+| bc_util / percent_bc_gt_75 / bc_open_to_buy | num_bc_tl | 91.6% / 100% / 91.6% | 0.9% / 0.9% / 0.8% | Mostly not structural: only ~1,060 loans lack bankcards, about one-sixth of the gaps |
+
+`emp_length` is missing for 91.1% of loans with a blank `emp_title`
+and 0.0% of loans with a title; about 99% of its gaps coincide with
+no employer information being supplied.
+
+Not tested: `mths_since_recent_bc_dlq`, `mths_since_recent_revol_delinq`
+(no clean condition column); treated analogously, to be checked at the
+binning stage.
+
+**Planned treatment:** structural gaps (`mths_since_*`,
+`mo_sin_old_il_acct`) get a missing indicator and a dedicated bin, no
+imputation; `emp_length` gets a "no employment info" indicator and
+Unknown category; residual gaps (`bc_*` family, `num_tl_120dpd_2m`)
+get median imputation fitted on training data only plus a missing
+flag. Whether each flag carries signal is tested by comparing bad
+rates of missing vs present groups before the plan is finalised.
