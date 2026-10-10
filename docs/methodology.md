@@ -24,6 +24,7 @@ audit trail and listed under "Replaces".
 | Rare categorical levels | Levels under 0.2% of train grouped to OTHER | 10 | The initial 1% rule noted in Section 10 |
 | Binning | Entropy-tree bins (min size max(1,000 loans, 2% of non-missing)), monotone merge, WoE = ln(%good/%bad) | 11 | |
 | Dropped after binning | initial_list_status, num_tl_120dpd_2m, addr_state | 11 | |
+| Limitations and governance | Accepted-loans-only scope, label vs Basel definition, excluded loans, fair-lending screen, drift and recalibration plan | 12 | |
 
 ---
 
@@ -156,12 +157,13 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-07 | 1faf713 | notebooks/05_snapshot_date.py | Effective snapshot date | max last_pymnt_d 2019-03; max last_credit_pull_d 2019-04 |
 | 2026-10-07 | 1faf713 | notebooks/06_build_target.py | Maturity filter and target mapping | data/processed/modeling_sample_ids_target.csv (696,232 loans, 14.82% bad) |
 | 2026-10-08 | f97ba09 | notebooks/07_leakage_audit.py | Column classification | reports/column_classification.csv |
-| 2026-10-08 | f97ba09 | notebooks/08_sample_missingness.py | Missingness inside the modeling sample | reports/sample_missingness.csv, reports/sample_missingness_by_year.csv |
+| 2026-10-08 | f97ba09 | notebooks/08_sample_missingness.py | Missingness inside the modeling sample | reports/sample_missingness.csv, reports/sample_missingness_by_year.csv (both committed in 229f343) |
 | 2026-10-08 | 229f343 | notebooks/09_missingness_by_year_and_bad_rate.py | Missingness by year; bad rate by year and term | console output (Section 7) |
 | 2026-10-08 | 04e9fef | notebooks/10_development_sample.py | Development sample and missingness diagnostics | data/processed/development_sample_ids_target.csv (568,694 loans, 14.10% bad); reports/dev_sample_*.csv |
 | 2026-10-08 | d23d97c | notebooks/11_split_and_missing_flags.py | Train / validation / out-of-time split; missing-flag signal | data/processed/development_split.csv (not tracked); reports/missing_flag_signal.csv |
 | 2026-10-08 | 7e9f94a | notebooks/12_feature_engineering.py | Feature table | data/processed/features.parquet (not tracked); reports/feature_dictionary.csv, categorical_levels.csv, winsor_thresholds.csv |
-| see git log -- src/woe.py | | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
+| 2026-10-10 | a33ebec | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
+| 2026-10-10 | (Section 12 commit) | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
 
 ---
 
@@ -487,8 +489,7 @@ weak 28, useless 37, suspicious 0.
   (annual_inc, mo_sin_old_rev_tl_op, percent_bc_gt_75, mo_sin_old_il_acct,
   credit_history_months, num_actv_rev_tl) because any reversal counted as broken. With
   reversals now counted only beyond 2 standard errors of the difference, one remains:
-  percent_bc_gt_75 (IV 0.032 train, 0.031 out-of-time, PSI 0.027); it is resolved at
-  variable selection.
+  percent_bc_gt_75 (IV 0.032 train, 0.031 out-of-time, PSI 0.027); it is resolved at variable selection. In the out-of-time set its 75.75-82.1 bin (3,632 loans) shows 19.52% bad against 17.09% for the top bin, a reversal of about 3.5 standard errors; in train the two top bins are indistinguishable (16.36% vs 16.40%), so if the feature is kept they are merged, at negligible IV cost.
 - Missing bins behave as hypothesised: mths_since_recent_inq Missing (no recent inquiry)
   9.84% bad vs 17.05% for an inquiry within 1.5 months, continuing the ordering of the
   non-missing bins; emp_length_yrs Missing (no employer information) 20.28% bad, WoE
@@ -517,3 +518,116 @@ weak 28, useless 37, suspicious 0.
 - Next: correlation clustering on the WoE features (the credit-size family tot_hi_cred_lim,
   total_bc_limit, avg_cur_bal, tot_cur_bal, total_rev_hi_lim, bc_open_to_buy, annual_inc is
   expected to collapse), then the first logistic-regression scorecard.
+
+---
+
+## 12. Limitations and governance
+
+Script: notebooks/14_governance_checks.py (console output only). This section records what
+the development sample can and cannot support, and the rules for monitoring it.
+
+### 12.1 Population: accepted loans only (no reject inference)
+
+The data contain only loans that Lending Club accepted and funded; rejected applicants have
+no repayment outcome. The model therefore describes the accepted population, and its PDs are
+valid only for applicants who would have been accepted under the 2013-2015 policy. Applying
+it to the full applicant pool would extrapolate beyond the data. Reject inference was not
+performed: the rejected-applications file carries only a handful of application fields, so
+an extension would be weak and is out of scope. The sample is further limited to 36-month
+loans issued Jan 2013 - Jan 2016 (Sections 7 and 8).
+
+### 12.2 Default definition and horizon
+
+Composition of the bad label in the development sample (568,694 loans, 80,202 bad):
+
+| Status | Loans | % of bad | % of all loans |
+|---|---|---|---|
+| Charged Off | 80,058 | 99.82 | 14.08 |
+| Late (31-120 days) | 144 | 0.18 | 0.03 |
+| Default | 0 | 0 | 0 |
+
+The label is in effect "charged off". Late (31-120) loans appear only at the end of the
+window (0.00% of loans issued in 2013-2014, 0.02% in 2015, 0.37% in Jan 2016, where some
+loans were still delinquent at the snapshot), so the part of the label below 90 days past
+due is immaterial here.
+
+Gaps to the Basel definition (default = 90+ days past due, or unlikely to pay):
+- A charge-off occurs after a longer delinquency than 90 days (the exact timing should be
+  verified against Lending Club's servicing policy before a figure is quoted). Loans that
+  reached 90+ days past due and later cured are labelled good. Against a 90+ days-past-due
+  definition the observed bad rate is therefore probably understated; rank-ordering is
+  likely affected less than the level of PD.
+- This cannot be re-labelled: the file has no monthly payment history.
+- Horizon: the target is default at any point in the full 36-month life (a cumulative PD),
+  not the 12-month PD used for Basel or IFRS 9 stage 1. Converting would need default-timing
+  data that this snapshot does not contain.
+- The 2013-2016 vintages were observed in a benign credit environment: the PDs are
+  point-in-time for that window, and are neither through-the-cycle nor downturn estimates.
+
+### 12.3 Loans excluded for an ambiguous status
+
+2,902 mature loans were excluded in Section 5b:
+
+| Status | Loans | Inside development window |
+|---|---|---|
+| Does not meet the credit policy: Fully Paid | 1,988 | 0 |
+| Does not meet the credit policy: Charged Off | 761 | 0 |
+| Current | 126 | 120 |
+| In Grace Period | 17 | 16 |
+| Late (16-30 days) | 10 | 10 |
+| Total | 2,902 | 146 |
+
+The 2,749 policy-exception loans (94.7%) were all issued in 2007-2010, outside the 2013+
+development window. Only 146 loans (0.03% of the development sample) are ambiguous-status
+loans inside it. Their outcome cannot be followed (the file is a snapshot), but the effect is
+bounded: the development bad rate of 14.10% would be 14.10% if all 146 were good and 14.12%
+if all were bad. On the earlier 696,232-loan sample the bounds were 14.76% to 15.17% (base
+14.82%). Excluding them is immaterial.
+
+### 12.4 Fair lending
+
+- Excluded: zip_code (fine geography, Section 10) and addr_state (Section 11: IV 0.016 is
+  below the 0.02 line, and state is a possible geographic proxy for protected
+  characteristics).
+- Retained for testing: emp_length_yrs (IV 0.0197). Employment length can correlate with age
+  and employment status (for example, retirees report no current employer), and its Missing
+  bin (no employer information, 17,707 train loans, 20.28% bad) is the largest
+  missing-group effect in Section 9 (+6.8pp within the same issue year). That link is a
+  hypothesis: the data has no age field to test it.
+- Plan: when the scorecard is built, report AUC and KS with and without emp_length_yrs; if
+  the loss is negligible, drop it.
+- Limitation: the dataset has no protected-class attributes (race, sex, age), so a
+  disparate-impact test cannot be run; in practice it would use collected or proxy-inferred
+  attributes. Other credit-capacity variables (income, credit limits) can also act as
+  proxies; this is documented, not tested.
+
+### 12.5 Drift response
+
+Observed: the out-of-time bad rate is 14.73% against 13.80% in train and validation (+0.93pp,
++6.7% relative, about 9 standard errors, so not sampling noise). Feature PSI is below 0.10
+for every feature except initial_list_status (excluded), so this is mainly calibration drift,
+not a change in applicant mix: in every fico_mean bin the out-of-time bad rate is higher than
+in train (about +1.8pp in the two riskiest bins, +0.1pp in the safest) while bin shares
+barely move.
+
+Response plan:
+1. Assess discrimination (AUC, KS, Gini) and calibration (observed/expected overall and by
+   score decile, calibration intercept and slope) separately, on validation and out-of-time.
+2. Tolerance (initial, to be justified): overall observed/expected within 0.95-1.05. The
+   standard error of observed/expected on the out-of-time set is about 0.6% relative, so
+   +-5% is well outside sampling noise. It was set knowing the 0.93pp base-rate gap, before
+   the final scorecard's observed/expected has been seen.
+3. If outside the band: recalibrate with an intercept-only shift in log-odds (slope kept
+   unless the calibration slope departs materially from 1). To keep a clean test, fit the
+   shift on Jul-Sep 2015 (73,569 loans) and test on Oct 2015 - Jan 2016 (111,343 loans);
+   report both.
+4. Monitoring after deployment: feature and score PSI (0.10 = watch, 0.25 = act; common
+   conventions), observed/expected and Gini by quarter. Gini-drop and re-development
+   triggers are set once the scorecard's out-of-time Gini is known.
+
+### 12.6 Other limitations
+
+- One lender, one product (36-month loans), one country and a three-year origination window;
+  no downturn period.
+- About 30 bureau fields were only populated for recent loans and cannot be used (Section 7).
+- The purpose grouping merges house, moving and small_business into one bin (Section 11).
