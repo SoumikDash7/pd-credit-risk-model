@@ -1,0 +1,37 @@
+{
+ "selected": [
+  "fico_mean",
+  "annual_inc",
+  "tot_hi_cred_lim",
+  "bc_open_to_buy",
+  "acc_open_past_24mths",
+  "dti",
+  "mort_acc",
+  "home_ownership",
+  "mo_sin_rcnt_tl",
+  "loan_to_income",
+  "mths_since_recent_inq",
+  "mo_sin_old_rev_tl_op",
+  "mths_since_recent_bc",
+  "bc_util",
+  "mo_sin_old_il_acct",
+  "num_actv_rev_tl",
+  "revol_bal",
+  "purpose",
+  "emp_length_yrs"
+ ],
+ "rules": {
+  "iv_min": 0.02,
+  "force_include": [
+   "emp_length_yrs"
+  ],
+  "corr_max": 0.7,
+  "vif_max": 5.0,
+  "excluded": [
+   "initial_list_status",
+   "num_tl_120dpd_2m",
+   "addr_state",
+   "payment_to_income"
+  ]
+ }
+}

@@ -25,6 +25,7 @@ audit trail and listed under "Replaces".
 | Binning | Entropy-tree bins (min size max(1,000 loans, 2% of non-missing)), monotone merge, WoE = ln(%good/%bad) | 11 | |
 | Dropped after binning | initial_list_status, num_tl_120dpd_2m, addr_state | 11 | |
 | Limitations and governance | Accepted-loans-only scope, label vs Basel definition, excluded loans, fair-lending screen, drift and recalibration plan | 12 | |
+| Variable selection | IV at least 0.02 (emp_length_yrs forced in); WoE correlation below 0.70; VIF below 5; payment_to_income excluded (embeds int_rate): 19 features | 13 | |
 
 ---
 
@@ -145,7 +146,7 @@ are fully observed, rather than an arbitrary recent cutoff.
 ## 5. Build log (audit table)
 
 One row per script. Dates are commit dates (not necessarily the day a script was first
-run) and commits are mapped to scripts by commit message. Scripts 01-06 were first
+run) and commits are mapped to scripts by commit message (the newest row's hash is filled in by the next documentation commit). Scripts 01-06 were first
 committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fef.
 
 | Date | Commit | Script | What it does | Main output |
@@ -163,7 +164,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-08 | d23d97c | notebooks/11_split_and_missing_flags.py | Train / validation / out-of-time split; missing-flag signal | data/processed/development_split.csv (not tracked); reports/missing_flag_signal.csv |
 | 2026-10-08 | 7e9f94a | notebooks/12_feature_engineering.py | Feature table | data/processed/features.parquet (not tracked); reports/feature_dictionary.csv, categorical_levels.csv, winsor_thresholds.csv |
 | 2026-10-10 | a33ebec | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
-| 2026-10-10 | (Section 12 commit) | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
+| 2026-10-10 | 7da2c8a | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
+| 2026-10-10 | (Section 13 commit) | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
 
 ---
 
@@ -631,3 +633,109 @@ Response plan:
   no downturn period.
 - About 30 bureau fields were only populated for recent loans and cannot be used (Section 7).
 - The purpose grouping merges house, moving and small_business into one bin (Section 11).
+
+---
+
+## 13. Variable selection
+
+Script: notebooks/15_variable_selection.py. Outputs: reports/variable_selection.csv (status and
+reason for all 66 features), reports/woe_corr_train.csv, reports/figures/woe_correlation.png,
+models/selected_features.json. All statistics use train rows only.
+
+**Rules (fixed before the results were seen).**
+1. Exclusions already decided: initial_list_status, num_tl_120dpd_2m, addr_state (Sections 11
+   and 12.4).
+2. IV gate: train IV of at least 0.02; emp_length_yrs (0.0197) is forced in (Section 11).
+3. Correlation filter on the WoE-transformed features: walking down by IV (features without a
+   review flag before flagged ones), a feature is dropped if its absolute correlation with an
+   already-kept feature is 0.70 or more. The cut-off is a convention (0.60-0.80 is common);
+   sensitivity is noted below.
+4. VIF of the survivors below 5 (common rule of thumb).
+
+**A fourth exclusion, found after the first run: payment_to_income.** The first run kept
+payment_to_income and dropped loan_to_income (correlation 0.97 between their WoE values).
+payment_to_income is built from installment, and for a fixed 36-month term installment divided
+by loan_amnt is a monotone function of the interest rate (train correlation 0.9989 with
+int_rate). The feature therefore carries Lending Club's risk-based price, which Section 10
+keeps out of the primary model (grade, sub_grade and int_rate are benchmark-only). The two
+ratios differ only by that rate term (up to the winsorisation caps), which is why
+payment_to_income has the higher IV (0.0638 vs 0.0408) and single-feature AUC (0.5686 vs
+0.5547) despite the 0.97 correlation. It would also be circular if the PD were ever used to
+set price. It is excluded and loan_to_income is used; the cost is measured in an ablation at
+the scorecard stage.
+
+**Funnel.** 66 features; 4 excluded (earlier decisions and the exclusion above); 33 dropped
+for IV below 0.02; 29 candidates (including emp_length_yrs); 10 dropped for correlation;
+**19 kept**; maximum VIF 3.39.
+
+Dropped for correlation:
+
+| Feature | IV train | Dropped because |
+|---|---|---|
+| avg_cur_bal | 0.0757 | r = 0.87 with tot_hi_cred_lim |
+| total_bc_limit | 0.0726 | r = 0.80 with bc_open_to_buy |
+| tot_cur_bal | 0.0658 | r = 0.96 with tot_hi_cred_lim |
+| total_rev_hi_lim | 0.0596 | r = 0.71 with bc_open_to_buy |
+| num_tl_op_past_12m | 0.0594 | r = 0.72 with acc_open_past_24mths |
+| mo_sin_rcnt_rev_tl_op | 0.0374 | r = 0.72 with mo_sin_rcnt_tl |
+| percent_bc_gt_75 | 0.0319 | r = 0.79 with bc_util |
+| inq_last_6mths | 0.0317 | r = 0.72 with mths_since_recent_inq |
+| credit_history_months | 0.0217 | r = 0.84 with mo_sin_old_rev_tl_op |
+| num_rev_tl_bal_gt_0 | 0.0214 | r = 0.99 with num_actv_rev_tl |
+
+Selected features:
+
+| Feature | Type | IV train | Max abs. correlation with a kept feature | VIF |
+|---|---|---|---|---|
+| fico_mean | numeric | 0.1392 | 0.52 | 1.63 |
+| annual_inc | numeric | 0.0807 | 0.55 | 2.11 |
+| tot_hi_cred_lim | numeric | 0.0795 | 0.64 | 2.87 |
+| bc_open_to_buy | numeric | 0.0786 | 0.69 | 3.39 |
+| acc_open_past_24mths | numeric | 0.0706 | 0.55 | 1.79 |
+| dti | numeric | 0.0578 | 0.23 | 1.36 |
+| mort_acc | numeric | 0.0484 | 0.64 | 2.19 |
+| home_ownership | categorical | 0.0437 | 0.62 | 1.92 |
+| mo_sin_rcnt_tl | numeric | 0.0419 | 0.55 | 1.68 |
+| loan_to_income | numeric | 0.0408 | 0.34 | 1.26 |
+| mths_since_recent_inq | numeric | 0.0366 | 0.37 | 1.22 |
+| mo_sin_old_rev_tl_op | numeric | 0.0357 | 0.36 | 1.39 |
+| mths_since_recent_bc | numeric | 0.0350 | 0.46 | 1.47 |
+| bc_util | numeric | 0.0276 | 0.69 | 2.79 |
+| mo_sin_old_il_acct | numeric | 0.0219 | 0.36 | 1.24 |
+| num_actv_rev_tl | numeric | 0.0217 | 0.39 | 1.52 |
+| revol_bal | numeric | 0.0211 | 0.45 | 2.23 |
+| purpose | categorical | 0.0208 | 0.09 | 1.02 |
+| emp_length_yrs | numeric | 0.0197 | 0.23 | 1.06 |
+
+![Correlation of candidate WoE features](../reports/figures/woe_correlation.png)
+
+**Observations.**
+- The credit-size family (avg_cur_bal, tot_cur_bal, total_bc_limit, total_rev_hi_lim) collapsed
+  into tot_hi_cred_lim and bc_open_to_buy; annual_inc survives (correlation 0.55 with
+  tot_hi_cred_lim). The one feature that carried a review flag, percent_bc_gt_75, lost to
+  bc_util (r = 0.79) despite its higher IV.
+- Seven pairs among the kept features sit between 0.5 and 0.7: bc_open_to_buy and bc_util
+  (0.69), tot_hi_cred_lim with mort_acc (0.64), mort_acc with home_ownership (0.62),
+  tot_hi_cred_lim with home_ownership (0.61), annual_inc with tot_hi_cred_lim (0.55),
+  acc_open_past_24mths with mo_sin_rcnt_tl (0.55), fico_mean with bc_open_to_buy (0.52). The
+  mortgage-related group (mort_acc, tot_hi_cred_lim, home_ownership) is the one to watch for
+  coefficient sign reversals.
+- Four of the ten drops are borderline (r between 0.71 and 0.72: total_rev_hi_lim,
+  num_tl_op_past_12m, mo_sin_rcnt_rev_tl_op, inq_last_6mths) and would survive a looser
+  cut-off. Five kept features sit within 0.002 of the IV line (revol_bal, purpose,
+  mo_sin_old_il_acct, num_actv_rev_tl, emp_length_yrs). Coefficient signs and stability at the
+  scorecard stage are the test of whether these lines were drawn in the right place.
+- None of the delinquency-history features (delinq_2yrs, pub_rec, pub_rec_bankruptcies,
+  mths_since_last_delinq, mths_since_last_record, mths_since_last_major_derog, acc_now_delinq)
+  passed the IV gate: they appear in neither the kept list nor the correlation drops. One
+  possible explanation is the accepted-only population (Section 12.1): applicants with a
+  recent delinquency may have been screened out before funding, compressing the signal. That
+  cannot be tested without rejected-applicant data. The feature set still covers score,
+  affordability, credit capacity, recent activity, credit depth, utilisation, home ownership,
+  purpose and employment.
+
+**Next:** a logistic-regression scorecard on the 19 WoE features. With WoE = ln(good/bad) and
+target 1 = bad, every coefficient is expected to be negative. Planned: coefficient and sign
+check; AUC, Gini and KS on train, validation and out-of-time; ablations with and without
+emp_length_yrs (Section 12.4) and with payment_to_income in place of loan_to_income (the cost of
+the exclusion above); calibration by score decile (Section 12.5).

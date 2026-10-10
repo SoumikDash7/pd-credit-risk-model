@@ -1,0 +1,67 @@
+feature,kind,iv_train,flags,status,reason
+avg_cur_bal,numeric,0.0757,,dropped_corr,|r|=0.87 with tot_hi_cred_lim (IV 0.0795)
+total_bc_limit,numeric,0.0726,,dropped_corr,|r|=0.80 with bc_open_to_buy (IV 0.0786)
+tot_cur_bal,numeric,0.0658,,dropped_corr,|r|=0.96 with tot_hi_cred_lim (IV 0.0795)
+total_rev_hi_lim,numeric,0.0596,,dropped_corr,|r|=0.71 with bc_open_to_buy (IV 0.0786)
+num_tl_op_past_12m,numeric,0.0594,,dropped_corr,|r|=0.72 with acc_open_past_24mths (IV 0.0706)
+mo_sin_rcnt_rev_tl_op,numeric,0.0374,,dropped_corr,|r|=0.72 with mo_sin_rcnt_tl (IV 0.0419)
+percent_bc_gt_75,numeric,0.0319,OOT bin order broken,dropped_corr,|r|=0.79 with bc_util (IV 0.0276)
+inq_last_6mths,numeric,0.0317,,dropped_corr,|r|=0.72 with mths_since_recent_inq (IV 0.0366)
+credit_history_months,numeric,0.0217,,dropped_corr,|r|=0.84 with mo_sin_old_rev_tl_op (IV 0.0357)
+num_rev_tl_bal_gt_0,numeric,0.0214,,dropped_corr,|r|=0.99 with num_actv_rev_tl (IV 0.0217)
+revol_util,numeric,0.017,,dropped_iv,IV 0.0170 < 0.02
+verification_status,categorical,0.0161,,dropped_iv,IV 0.0161 < 0.02
+loan_amnt,numeric,0.0081,,dropped_iv,IV 0.0081 < 0.02
+total_bal_ex_mort,numeric,0.0075,,dropped_iv,IV 0.0075 < 0.02
+total_acc,numeric,0.0072,,dropped_iv,IV 0.0072 < 0.02
+total_il_high_credit_limit,numeric,0.0052,,dropped_iv,IV 0.0052 < 0.02
+num_bc_tl,numeric,0.005,,dropped_iv,IV 0.0050 < 0.02
+mths_since_last_major_derog,numeric,0.0048,,dropped_iv,IV 0.0048 < 0.02
+mths_since_last_record,numeric,0.0047,,dropped_iv,IV 0.0047 < 0.02
+num_actv_bc_tl,numeric,0.0047,,dropped_iv,IV 0.0047 < 0.02
+num_il_tl,numeric,0.0044,,dropped_iv,IV 0.0044 < 0.02
+pub_rec,numeric,0.0043,,dropped_iv,IV 0.0043 < 0.02
+num_op_rev_tl,numeric,0.0043,,dropped_iv,IV 0.0043 < 0.02
+installment,numeric,0.0037,,dropped_iv,IV 0.0037 < 0.02
+pub_rec_bankruptcies,numeric,0.0031,,dropped_iv,IV 0.0031 < 0.02
+tot_coll_amt,numeric,0.0029,,dropped_iv,IV 0.0029 < 0.02
+num_accts_ever_120_pd,numeric,0.0029,,dropped_iv,IV 0.0029 < 0.02
+delinq_2yrs,numeric,0.0016,,dropped_iv,IV 0.0016 < 0.02
+num_rev_accts,numeric,0.0015,,dropped_iv,IV 0.0015 < 0.02
+mths_since_last_delinq,numeric,0.0015,,dropped_iv,IV 0.0015 < 0.02
+mths_since_recent_bc_dlq,numeric,0.0014,,dropped_iv,IV 0.0014 < 0.02
+pct_tl_nvr_dlq,numeric,0.0013,,dropped_iv,IV 0.0013 < 0.02
+open_acc,numeric,0.0011,,dropped_iv,IV 0.0011 < 0.02
+num_sats,numeric,0.0011,,dropped_iv,IV 0.0011 < 0.02
+mths_since_recent_revol_delinq,numeric,0.0008,,dropped_iv,IV 0.0008 < 0.02
+num_tl_90g_dpd_24m,numeric,0.0008,,dropped_iv,IV 0.0008 < 0.02
+num_bc_sats,numeric,0.0007,,dropped_iv,IV 0.0007 < 0.02
+tax_liens,numeric,0.0002,,dropped_iv,IV 0.0002 < 0.02
+acc_now_delinq,numeric,0.0,,dropped_iv,IV 0.0000 < 0.02
+chargeoff_within_12_mths,numeric,0.0,,dropped_iv,IV 0.0000 < 0.02
+delinq_amnt,numeric,0.0,,dropped_iv,IV 0.0000 < 0.02
+collections_12_mths_ex_med,numeric,0.0,,dropped_iv,IV 0.0000 < 0.02
+num_tl_30dpd,numeric,0.0,,dropped_iv,IV 0.0000 < 0.02
+payment_to_income,numeric,0.0638,,excluded,"installment embeds int_rate, a lender-assigned price (Section 13)"
+addr_state,categorical,0.0163,,excluded,"IV 0.016 below the line; geographic proxy (Sections 11, 12.4)"
+initial_list_status,categorical,0.0055,PSI(oot)=0.28,excluded,"PSI 0.28 out-of-time, IV 0.006 (Section 11)"
+num_tl_120dpd_2m,numeric,0.002,,excluded,IV 0.002; missingness tied to a 2014 data-feed change (Section 11)
+fico_mean,numeric,0.1392,,kept,
+annual_inc,numeric,0.0807,,kept,
+tot_hi_cred_lim,numeric,0.0795,,kept,
+bc_open_to_buy,numeric,0.0786,,kept,
+acc_open_past_24mths,numeric,0.0706,,kept,
+dti,numeric,0.0578,,kept,
+mort_acc,numeric,0.0484,,kept,
+home_ownership,categorical,0.0437,,kept,
+mo_sin_rcnt_tl,numeric,0.0419,,kept,
+loan_to_income,numeric,0.0408,,kept,
+mths_since_recent_inq,numeric,0.0366,,kept,
+mo_sin_old_rev_tl_op,numeric,0.0357,,kept,
+mths_since_recent_bc,numeric,0.035,,kept,
+bc_util,numeric,0.0276,,kept,
+mo_sin_old_il_acct,numeric,0.0219,,kept,
+num_actv_rev_tl,numeric,0.0217,,kept,
+revol_bal,numeric,0.0211,,kept,
+purpose,categorical,0.0208,,kept,
+emp_length_yrs,numeric,0.0197,,kept,
