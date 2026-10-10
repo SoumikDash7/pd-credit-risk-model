@@ -1,8 +1,29 @@
-﻿# PD Credit Risk Model — Methodology & Decision Log
+# PD Credit Risk Model — Methodology & Decision Log
 
 This document tracks key modeling decisions as they are made, with the
 reasoning behind each — the same way a model development document would
 be written for independent validation review at a bank.
+
+---
+
+## Current rules at a glance
+
+Quick reference to the rule in force for each topic and where it is documented.
+Where a later section changes an earlier one, the earlier text is kept for the
+audit trail and listed under "Replaces".
+
+| Topic | Rule in force | Section | Replaces |
+|---|---|---|---|
+| Source data | Lending Club accepted loans 2007-2018 Q4, 2,260,701 rows x 151 columns, read in 200K-row chunks | 1 | |
+| Target | Good = Fully Paid; Bad = Charged Off, Late (31-120 days), Default; Current, grace period, Late (16-30), policy-exception and blank statuses excluded | 3 | |
+| Maturity filter | Loan kept only if issue date + term is on or before 2019-01-01 | 4, 5b | |
+| Development population | 36-month loans issued Jan 2013 - Jan 2016: 568,694 loans, 14.10% bad | 7, 8 | The 696,232-loan maturity-filtered sample of Sections 4 and 5b (now an intermediate step) |
+| Split | Train 307,025 and validation 76,757 (random, Jan 2013 - Jun 2015); out-of-time 184,912 (Jul 2015 - Jan 2016) | 9 | |
+| Eligible columns | Origination-time columns only; 38 post-origination columns excluded; grade, sub_grade, int_rate kept as benchmark only | 6, 10 | |
+| Missing values | Structural gaps get their own bin; revol_util, pct_tl_nvr_dlq and avg_cur_bal get a train median; no other imputation | 9, 11 | Section 2 planned treatment, Section 7 working hypothesis and Section 8 residual-gap plan (bankcard fields are structural, not median-imputed) |
+| Rare categorical levels | Levels under 0.2% of train grouped to OTHER | 10 | The initial 1% rule noted in Section 10 |
+| Binning | Entropy-tree bins (min size max(1,000 loans, 2% of non-missing)), monotone merge, WoE = ln(%good/%bad) | 11 | |
+| Dropped after binning | initial_list_status, num_tl_120dpd_2m, addr_state | 11 | |
 
 ---
 
@@ -120,39 +141,31 @@ are fully observed, rather than an arbitrary recent cutoff.
 
 ---
 
-## 5. Build log
+## 5. Build log (audit table)
 
-| Date | Step | Script | Output |
-|---|---|---|---|
-| TBD | Raw inspection (shape, columns) | `notebooks/01_raw_inspection.py` | 2,260,701 rows × 151 cols |
-| TBD | Missingness map | `notebooks/02_missingness_and_target.py` | `reports/missingness_map.csv` |
-| TBD | Target status counts | `notebooks/03_target_definition.py` | `reports/loan_status_counts.csv` |
-| TBD | Vintage × term distribution | `notebooks/04_vintage_check.py` | `reports/vintage_by_term.csv` |
-| TBD | Snapshot date check | `notebooks/05_snapshot_date.py` | max last_pymnt_d / last_credit_pull_d |
-| TBD | Target + maturity filter construction | `notebooks/06_build_target.py` | `data/processed/modeling_sample_ids_target.csv` |
+One row per script. Dates are commit dates (not necessarily the day a script was first
+run) and commits are mapped to scripts by commit message. Scripts 01-06 were first
+committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fef.
 
-*(Fill in actual dates as you go — this table is the running audit
-trail of the project.)*
-
----
-
-## Next steps
-
-- Feature engineering: parse raw string fields (`term`, `emp_length`,
-  `revol_util`, dates) into usable numeric/categorical features
-- **Leakage audit**: identify and exclude columns only known
-  post-origination (`total_pymnt`, `recoveries`, `last_pymnt_d`,
-  hardship/settlement fields, etc.) — a PD model must only use
-  information available *at the time of origination*
-- Missing value treatment per the plan in Section 2
-- Train/test split strategy (likely time-based, given vintage
-  structure)
-- WoE/IV binning, model development, validation suite (AUC, KS, Gini,
-  PSI), SHAP interpretation
+| Date | Commit | Script | What it does | Main output |
+|---|---|---|---|---|
+| 2026-10-07 | 1faf713 | notebooks/01_raw_inspection.py | Raw shape and column list | 2,260,701 rows x 151 columns |
+| 2026-10-07 | 1faf713 | notebooks/02_missingness_and_target.py | Chunked missingness map | reports/missingness_map.csv |
+| 2026-10-07 | 1faf713 | notebooks/03_target_definition.py | loan_status counts | reports/loan_status_counts.csv |
+| 2026-10-07 | 1faf713 | notebooks/04_vintage_check.py | Loans by issue year and term | reports/vintage_by_term.csv |
+| 2026-10-07 | 1faf713 | notebooks/05_snapshot_date.py | Effective snapshot date | max last_pymnt_d 2019-03; max last_credit_pull_d 2019-04 |
+| 2026-10-07 | 1faf713 | notebooks/06_build_target.py | Maturity filter and target mapping | data/processed/modeling_sample_ids_target.csv (696,232 loans, 14.82% bad) |
+| 2026-10-08 | f97ba09 | notebooks/07_leakage_audit.py | Column classification | reports/column_classification.csv |
+| 2026-10-08 | f97ba09 | notebooks/08_sample_missingness.py | Missingness inside the modeling sample | reports/sample_missingness.csv, reports/sample_missingness_by_year.csv |
+| 2026-10-08 | 229f343 | notebooks/09_missingness_by_year_and_bad_rate.py | Missingness by year; bad rate by year and term | console output (Section 7) |
+| 2026-10-08 | 04e9fef | notebooks/10_development_sample.py | Development sample and missingness diagnostics | data/processed/development_sample_ids_target.csv (568,694 loans, 14.10% bad); reports/dev_sample_*.csv |
+| 2026-10-08 | d23d97c | notebooks/11_split_and_missing_flags.py | Train / validation / out-of-time split; missing-flag signal | data/processed/development_split.csv (not tracked); reports/missing_flag_signal.csv |
+| 2026-10-08 | 7e9f94a | notebooks/12_feature_engineering.py | Feature table | data/processed/features.parquet (not tracked); reports/feature_dictionary.csv, categorical_levels.csv, winsor_thresholds.csv |
+| see git log -- src/woe.py | | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
 
 ---
 
-## Update — Target construction run (Section 3 & 4 results)
+## 5b. Target construction run results (supplements Sections 3 and 4)
 
 Running `notebooks/06_build_target.py`:
 
@@ -417,3 +430,90 @@ and pct_tl_nvr_dlq (0.03%) get a train-fitted median. The credit-scale
 columns (tot_hi_cred_lim, total_bc_limit, avg_cur_bal, tot_cur_bal,
 total_rev_hi_lim, bc_open_to_buy, annual_inc) are expected to be
 collinear; variable selection will cluster them.
+
+Categorical result at the 0.2% threshold: purpose 14 -> 12 levels (OTHER =
+0.15% of loans: wedding, renewable_energy, educational); addr_state 51 -> 47
+levels (OTHER = 0.29%). small_business, car and medical (0.93-0.99% of train
+each) are kept as separate levels; the initial 1% rule would have pooled them.
+
+---
+
+## 11. WoE / IV binning
+
+Script: notebooks/13_woe_binning.py; module: src/woe.py (WoEBinner). Outputs:
+models/woe_spec.json (cut points and WoE per bin), reports/woe_bins.csv (per-bin counts
+and bad rates for train, validation and out-of-time), reports/iv_summary.csv (IV,
+stability and review flags per feature).
+
+**Method (everything fitted on train rows only).**
+- Numeric: an entropy decision tree proposes up to 10 cut points; every bin holds at
+  least max(1,000 loans, 2% of the non-missing rows). Adjacent bins are then merged
+  (pool adjacent violators) until the bad rate is monotone in the feature; the direction
+  is whichever gives the higher IV.
+- Missing values: structural-missing features get a dedicated Missing bin. revol_util,
+  pct_tl_nvr_dlq and avg_cur_bal get a train median instead (avg_cur_bal was added after
+  the first run: its Missing bin held a handful of loans and only 2 bad).
+- Categorical: levels are ordered by train bad rate and grouped by the same tree, so
+  groups are contiguous in risk. Levels unseen in train receive a neutral WoE of 0.
+- Convention: WoE = ln(%good / %bad), so a higher WoE is a safer bin; IV is the sum of
+  (%good - %bad) x WoE. Counts are floored at 0.5 so an empty bin cannot give log(0).
+  Applying the saved spec to train reproduces the fit-time IV exactly (checked for every
+  feature).
+- Validation and out-of-time are used only for testing: IV with the train WoE on each
+  split, PSI of bin shares against train, and whether the bin order holds.
+
+**Results (66 features).** IV bands on train (common rule of thumb): strong 0, medium 1,
+weak 28, useless 37, suspicious 0.
+
+| Feature | IV train | IV validation | IV out-of-time |
+|---|---|---|---|
+| fico_mean | 0.139 | 0.139 | 0.157 |
+| annual_inc | 0.081 | 0.074 | 0.069 |
+| tot_hi_cred_lim | 0.080 | 0.077 | 0.077 |
+| bc_open_to_buy | 0.079 | 0.084 | 0.084 |
+| avg_cur_bal | 0.076 | 0.074 | 0.072 |
+| total_bc_limit | 0.073 | 0.076 | 0.080 |
+| acc_open_past_24mths | 0.071 | 0.073 | 0.093 |
+| tot_cur_bal | 0.066 | 0.062 | 0.061 |
+| payment_to_income | 0.064 | 0.062 | 0.060 |
+| total_rev_hi_lim | 0.060 | 0.058 | 0.067 |
+
+- Stability: for all of the top 25, out-of-time IV is 0.85-1.34 times train IV; the
+  recent-activity features (acc_open_past_24mths, num_tl_op_past_12m, inq_last_6mths,
+  mths_since_recent_inq) gain about 30% IV out-of-time. The monotone constraint costs at
+  most 5.1% of IV among the top 25. PSI(out-of-time) is below 0.10 for every feature
+  except initial_list_status (0.277); the largest in the top 25 is 0.027.
+- Review flags: the first run flagged 6 features for an out-of-time bin-order reversal
+  (annual_inc, mo_sin_old_rev_tl_op, percent_bc_gt_75, mo_sin_old_il_acct,
+  credit_history_months, num_actv_rev_tl) because any reversal counted as broken. With
+  reversals now counted only beyond 2 standard errors of the difference, one remains:
+  percent_bc_gt_75 (IV 0.032 train, 0.031 out-of-time, PSI 0.027); it is resolved at
+  variable selection.
+- Missing bins behave as hypothesised: mths_since_recent_inq Missing (no recent inquiry)
+  9.84% bad vs 17.05% for an inquiry within 1.5 months, continuing the ordering of the
+  non-missing bins; emp_length_yrs Missing (no employer information) 20.28% bad, WoE
+  -0.46, on 17,707 train loans; num_tl_120dpd_2m Missing 17.01% bad but IV 0.002;
+  mths_since_last_record IV 0.005.
+- Calibration drift is visible in the bins: the out-of-time bad rate is higher than train
+  in every fico_mean bin (about +1.8pp in the two riskiest, +0.1pp in the safest) while
+  bin shares barely move (PSI 0.005). Rank ordering holds; the level of default rates
+  rose.
+- purpose: raw train bad rates run from 11.5% (car) to 22.9% (small_business, 2,987
+  loans), with moving 20.4% and house 16.9%. The 2% minimum bin size merges house,
+  moving and small_business into one bin of 6,160 loans at 20.94%, which understates
+  small_business by 1.9pp and overstates house by 4.0pp (2.0% of train loans). Accepted:
+  purpose IV is 0.021 and the group still carries the risk ordering.
+- addr_state: 47 levels grouped into 10 risk-ordered bins (9.85% to 17.21% bad), IV 0.016.
+
+**Decisions.**
+- Excluded from variable selection: initial_list_status (PSI 0.277 out-of-time vs 0.0 for
+  the random validation split, so the shift is time-driven; IV 0.006; it describes how the
+  loan was listed, not the borrower), num_tl_120dpd_2m (IV 0.002; missingness tied to a
+  2014 data-feed change) and addr_state (IV 0.016 is below the 0.02 line and geography is a
+  possible proxy for protected characteristics; see Section 12).
+- Features under IV 0.02 are candidates to drop at selection. 0.02 is a soft line:
+  emp_length_yrs (0.0197) and purpose (0.0208) go forward because their effect sits in
+  small, interpretable groups.
+- Next: correlation clustering on the WoE features (the credit-size family tot_hi_cred_lim,
+  total_bc_limit, avg_cur_bal, tot_cur_bal, total_rev_hi_lim, bc_open_to_buy, annual_inc is
+  expected to collapse), then the first logistic-regression scorecard.
