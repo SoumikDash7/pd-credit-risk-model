@@ -30,6 +30,7 @@ audit trail and listed under "Replaces".
 | Final model | 16 features: emp_length_yrs dropped by decision, revol_bal and mort_acc dropped by the leave-one-out rule; logistic regression fitted on train | 15 | The 19-feature scorecard of Section 14 |
 | Recalibration | Intercept shift of 0.0689 log-odds fitted on Jul-Sep 2015; test O/E 1.044 on Oct 2015 - Jan 2016 (pass, band 0.95-1.05); 0.1008 fitted on all out-of-time loans stored for deployment, untested | 15 | |
 | Challenger models | XGBoost with monotone constraints is 0.0055 AUC ahead out-of-time (0.0078 on validation): small; random forest no better; unconstrained XGBoost 0.011 ahead out-of-time (diagnostic). The scorecard stays the primary model | 16 | |
+| SHAP analysis | Same five features lead in all three models; annual_inc and bc_util show non-monotone dependence in the unconstrained model; interactions carry about 46% of its attributed effect (31% monotone); adding loan_amnt to the scorecard gains +0.0001 AUC (not supported) | 17 | |
 
 ---
 
@@ -172,7 +173,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-10 | 6fd2dee | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
 | 2026-10-11 | 79a2fee | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
 | 2026-10-11 | 054ba23 | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
-| 2026-10-11 | (Section 16 commit) | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
+| 2026-10-11 | 829dc4b | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
+| 2026-10-11 | (Section 17 commit) | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
 
 ---
 
@@ -1006,8 +1008,8 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
-vintage), SHAP, scenario and sensitivity tests, scorecard points scaling, and the validation report.
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
+vintage), scenario and sensitivity tests, scorecard points scaling, and the validation report.
 
 ---
 
@@ -1142,3 +1144,164 @@ bc_open_to_buy 4.4, loan_to_income 3.8, mo_sin_rcnt_tl 3.4, mths_since_recent_in
 **Next.** SHAP on the XGBoost models to locate the structure the monotone constraint removes, including a
 check of the loan-size hypothesis on validation data; then lift and gain, the confusion matrix at an agreed
 cut-off, scenario and sensitivity tests, points scaling, and the validation report.
+
+---
+
+## 17. SHAP analysis of the challengers
+
+Script: notebooks/19_shap_analysis.py. Outputs: reports/shap_importance.csv, shap_monotonicity.csv,
+shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png and shap_profiles.png.
+
+**Purpose.** Locate what the unconstrained XGBoost sees that the scorecard does not (the +0.011 to +0.013 AUC gap
+of Section 16) and test the loan-size hypothesis raised there.
+
+**Setup, fixed beforehand.**
+- Only train and validation rows are used; out-of-time rows are not loaded.
+- Both XGBoost models are refitted from models/challenger_params.json and reproduce their Section 16 validation
+  AUCs (0.6787 and 0.6839).
+- Contributions are XGBoost's native TreeSHAP values (pred_contribs and pred_interactions), in log-odds. Per-row
+  contributions plus bias equal the model margin (checked). One fixed random sample of 20,000 validation rows
+  (seed 42), 5,000 of them for interaction values. Scorecard contributions are coefficient times (WoE minus its
+  train mean). One-hot columns are summed per row before taking absolute values.
+- A dependence reversal is flagged above 0.05 log-odds (own materiality judgement). The loan_amnt test counts as an
+  explanation only if validation AUC rises by at least 0.002, the paired-bootstrap interval excludes 0 and the
+  coefficient is negative.
+- Expectations stated beforehand: annual_inc x loan_to_income among the top three interaction pairs (not met: rank
+  8 of 120); a loan_amnt gain of 0.001 to 0.003 (not met: +0.0001).
+
+**Importance** (mean absolute contribution to log-odds on the validation sample; rank in brackets for scorecard,
+monotone XGBoost, unconstrained XGBoost):
+
+| Feature | Scorecard | XGBoost monotone | XGBoost unconstrained | Ranks |
+|---|---|---|---|---|
+| fico_mean | 0.1772 | 0.2132 | 0.2106 | 1, 1, 1 |
+| loan_to_income | 0.1462 | 0.1539 | 0.1709 | 3, 2, 2 |
+| dti | 0.1175 | 0.1330 | 0.1550 | 5, 4, 3 |
+| bc_open_to_buy | 0.1326 | 0.1250 | 0.1505 | 4, 5, 4 |
+| acc_open_past_24mths | 0.1481 | 0.1477 | 0.1450 | 2, 3, 5 |
+| tot_hi_cred_lim | 0.0918 | 0.0998 | 0.1077 | 8, 7, 6 |
+| mths_since_recent_inq | 0.1060 | 0.1111 | 0.1049 | 6, 6, 7 |
+| mths_since_recent_bc | 0.0706 | 0.0754 | 0.0789 | 10, 10, 8 |
+| purpose | 0.1000 | 0.0861 | 0.0784 | 7, 8, 9 |
+| home_ownership | 0.0737 | 0.0630 | 0.0738 | 9, 11, 10 |
+| annual_inc | 0.0497 | 0.0790 | 0.0625 | 12, 9, 11 |
+| mo_sin_old_il_acct | 0.0504 | 0.0469 | 0.0576 | 11, 15, 12 |
+| mo_sin_old_rev_tl_op | 0.0377 | 0.0526 | 0.0541 | 14, 13, 13 |
+| num_actv_rev_tl | 0.0398 | 0.0543 | 0.0514 | 13, 12, 14 |
+| bc_util | 0.0245 | 0.0371 | 0.0470 | 16, 16, 15 |
+| mo_sin_rcnt_tl | 0.0324 | 0.0474 | 0.0382 | 15, 14, 16 |
+
+Sum of mean absolute contributions: scorecard 1.398, monotone XGBoost 1.526, unconstrained XGBoost 1.586.
+- The same five features lead in all three models: fico_mean, loan_to_income, acc_open_past_24mths, dti,
+  bc_open_to_buy.
+- The gain importance of Section 16 overstated purpose (13.8%, third place): by mean absolute contribution it ranks
+  7th, 8th and 9th. The caveat about summing gain across one-hot columns in Section 16 was warranted.
+- The monotone XGBoost uses annual_inc about 1.6 times as much as the scorecard (0.079 against 0.050).
+
+![Feature importance on one scale](../reports/figures/shap_importance.png)
+
+**Dependence by feature decile** (mean contribution per decile; reversal = largest adjacent-decile move against the
+scorecard's direction, in log-odds):
+
+| Feature | Expected | Max reversal, monotone | Max reversal, unconstrained | Flag (above 0.05) |
+|---|---|---|---|---|
+| annual_inc | down | 0.0000 | 0.2095 | yes |
+| bc_util | up | 0.0000 | 0.0764 | yes |
+| mo_sin_old_il_acct | down | 0.0001 | 0.0365 | no |
+| mths_since_recent_bc | down | 0.0000 | 0.0304 | no |
+| num_actv_rev_tl | up | 0.0000 | 0.0183 | no |
+| mo_sin_old_rev_tl_op | down | 0.0000 | 0.0179 | no |
+| mo_sin_rcnt_tl | down | 0.0000 | 0.0120 | no |
+| dti, bc_open_to_buy, tot_hi_cred_lim, fico_mean, acc_open_past_24mths, mths_since_recent_inq, loan_to_income | | 0.0000 | 0.0000 | no |
+
+The largest reversal in the monotone model is 0.0001, so the noise floor is effectively zero and the two flags are
+real features of the unconstrained model.
+
+annual_inc (expected down):
+
+| Decile median | Monotone | Unconstrained |
+|---|---|---|
+| 26,000 | 0.1372 | 0.0829 |
+| 36,400 | 0.1124 | 0.0469 |
+| 44,000 | 0.0735 | 0.0000 |
+| 50,000 | 0.0331 | -0.0086 |
+| 57,600 | 0.0035 | 0.0091 |
+| 65,000 | -0.0515 | -0.0271 |
+| 75,000 | -0.0877 | -0.0387 |
+| 89,000 | -0.0932 | -0.0813 |
+| 106,000 | -0.0950 | -0.0595 |
+| 150,000 | -0.0980 | 0.1501 |
+
+bc_util (expected up):
+
+| Decile median | Monotone | Unconstrained |
+|---|---|---|
+| 14.0 | -0.0302 | 0.1055 |
+| 31.9 | -0.0301 | 0.0290 |
+| 44.3 | -0.0288 | 0.0040 |
+| 54.4 | -0.0273 | -0.0003 |
+| 63.4 | -0.0265 | -0.0189 |
+| 71.9 | -0.0259 | -0.0301 |
+| 79.3 | -0.0231 | -0.0527 |
+| 86.7 | -0.0115 | -0.0694 |
+| 93.1 | 0.0327 | -0.0207 |
+| 98.2 | 0.1149 | 0.0543 |
+
+- annual_inc: the unconstrained model's contribution falls with income to -0.081 and then rises to +0.150 in the top
+  decile, a move of +0.21 in the last step, against a flat -0.098 in the monotone model (a swing of about +0.25
+  log-odds, roughly 3pp of default rate at the 14% level). The univariate bad rate by income is monotone (the WoE
+  binning needed no monotone merging, IV cost 0.0%), so this is a conditional effect that appears once other
+  features are present. A risk that rises again at the highest incomes would need an economic rationale to be
+  accepted in a validation review; this supports keeping the monotone scorecard as the primary model.
+- bc_util is U-shaped in the unconstrained model: highest at 14% utilisation, lowest at 87%, rising again at 98%.
+  Univariately it is monotone (IV cost 2.7%).
+
+![Dependence of the two XGBoost models](../reports/figures/shap_profiles.png)
+
+**Pairwise interactions** (mean absolute interaction effect, log-odds, 5,000 validation rows; the unconstrained
+model's top ten of 120 pairs):
+
+| Pair | Monotone | Unconstrained |
+|---|---|---|
+| annual_inc x tot_hi_cred_lim | 0.0022 | 0.0401 |
+| bc_open_to_buy x bc_util | 0.0008 | 0.0384 |
+| mo_sin_old_rev_tl_op x mo_sin_old_il_acct | 0.0042 | 0.0357 |
+| fico_mean x bc_open_to_buy | 0.0115 | 0.0344 |
+| annual_inc x bc_open_to_buy | 0.0071 | 0.0287 |
+| fico_mean x annual_inc | 0.0228 | 0.0275 |
+| dti x loan_to_income | 0.0111 | 0.0273 |
+| annual_inc x loan_to_income | 0.0017 | 0.0260 |
+| fico_mean x loan_to_income | 0.0200 | 0.0232 |
+| tot_hi_cred_lim x acc_open_past_24mths | 0.0150 | 0.0229 |
+
+- Roughly 30.7% of the monotone model's attributed effect and 45.5% of the unconstrained model's sit in pairwise
+  interactions (sums of mean absolute values, so approximate).
+- The largest unconstrained pairs are ones the monotone model barely uses. Among the pairs listed, the monotone
+  model's largest are fico_mean with annual_inc (0.0228) and with loan_to_income (0.0200), and tot_hi_cred_lim with
+  acc_open_past_24mths (0.0150): the effect of the score depends on income and loan size. The monotone model's own
+  full ranking is in reports/shap_interactions.csv.
+
+**Loan-size test (validation only).** Adding the WoE of loan_amnt to the 16-feature scorecard (refitted on train):
+validation AUC 0.6708 to 0.6709 (gain +0.0001, 95% interval -0.0001 to +0.0002), which is 1% of the 0.0131 gap
+between the unconstrained XGBoost and the scorecard on validation. The coefficient is +0.388 (p = 0.00037), the wrong
+sign; the WoE of loan_amnt correlates -0.44 with loan_to_income and +0.50 with annual_inc, so it behaves as a
+suppressor of those two and not as a risk driver. Result: not supported as an explanation of the gap.
+
+**Interpretation (hypothesis, not tested).** The largest unconstrained interactions (annual_inc x tot_hi_cred_lim,
+bc_open_to_buy x bc_util), the U-shaped bc_util profile and the top-decile income reversal are consistent with the
+unconstrained model rebuilding credit-capacity quantities from products and ratios of the raw features. By the Lending
+Club data-dictionary definitions bc_open_to_buy is the bankcard limit minus balances and bc_util is balance divided by
+limit, so the implied limit is about bc_open_to_buy / (1 - bc_util/100). total_bc_limit, which carries that quantity,
+was removed at the correlation filter (r = 0.80 with bc_open_to_buy, Section 13). Credit limit relative to income is
+the other candidate.
+
+**Caveats.**
+- A SHAP dependence profile includes a feature's share of its interactions, so a reversal in an average contribution
+  is not a univariate reversal.
+- The interaction shares are sums of mean absolute values and approximate.
+- One sample of 20,000 rows (5,000 for interactions), seed 42; the top income decile holds about 2,000 sample rows.
+- The unconstrained model overfits train (AUC 0.703 against 0.684 on validation), so part of its structure may be
+  noise; its out-of-time AUC of 0.690, on loans that played no part in tuning, suggests part is real.
+
+**Next.** Calibration of the scorecard by feature decile on validation, and tests on validation of capacity-ratio
+features suggested by the interpretation above.
