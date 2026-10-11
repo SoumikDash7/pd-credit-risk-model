@@ -26,6 +26,7 @@ audit trail and listed under "Replaces".
 | Dropped after binning | initial_list_status, num_tl_120dpd_2m, addr_state | 11 | |
 | Limitations and governance | Accepted-loans-only scope, label vs Basel definition, excluded loans, fair-lending screen, drift and recalibration plan | 12 | |
 | Variable selection | IV at least 0.02 (emp_length_yrs forced in); WoE correlation below 0.70; VIF below 5; payment_to_income excluded (embeds int_rate): 19 features | 13 | |
+| Development scorecard | Unregularised logistic regression on the 19 WoE features, fitted on train; validation and out-of-time scored only | 14 | |
 
 ---
 
@@ -165,7 +166,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-08 | 7e9f94a | notebooks/12_feature_engineering.py | Feature table | data/processed/features.parquet (not tracked); reports/feature_dictionary.csv, categorical_levels.csv, winsor_thresholds.csv |
 | 2026-10-10 | a33ebec | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
 | 2026-10-10 | 7da2c8a | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
-| 2026-10-10 | (Section 13 commit) | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
+| 2026-10-10 | 6fd2dee | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
+| 2026-10-11 | (Section 14 commit) | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
 
 ---
 
@@ -739,3 +741,122 @@ target 1 = bad, every coefficient is expected to be negative. Planned: coefficie
 check; AUC, Gini and KS on train, validation and out-of-time; ablations with and without
 emp_length_yrs (Section 12.4) and with payment_to_income in place of loan_to_income (the cost of
 the exclusion above); calibration by score decile (Section 12.5).
+
+---
+
+## 14. Development scorecard (19 features)
+
+Script: notebooks/16_scorecard.py. Outputs: reports/scorecard_coefficients.csv,
+reports/scorecard_metrics.csv, reports/scorecard_ablations.csv, reports/scorecard_calibration.csv,
+reports/scorecard_deciles.csv, reports/figures/scorecard_calibration.png and
+models/scorecard_params.json (intercept, coefficients, feature list).
+
+**Model.** Unregularised logistic regression (statsmodels Logit) on the 19 selected WoE features,
+fitted on train (307,025 loans, 42,370 bad). It converged, and the mean predicted PD on train equals
+the observed bad rate (13.80%), as it must at the maximum-likelihood fit with an intercept.
+PD = 1 / (1 + exp(-(b0 + sum of b_i x WoE_i))).
+
+**Rules fixed before the results were seen.** Every coefficient negative (WoE = ln(good/bad) and
+target 1 = bad); AUC, Gini and KS on train, validation and out-of-time next to the int_rate benchmark
+of Section 10; two ablations with a paired bootstrap of the AUC difference (200 resamples);
+calibration judged against the 0.95-1.05 observed/expected band of Section 12.5; the out-of-time set
+scored and not used for any modelling choice. From this section on, any change to features or binning
+informed by out-of-time results is logged as such.
+
+**Coefficients** (intercept -1.8360). All 19 are negative and significant (largest p-value 0.031).
+
+| Feature | Coefficient | Std. error | p-value |
+|---|---|---|---|
+| fico_mean | -0.5316 | 0.0190 | 3.6e-172 |
+| annual_inc | -0.1180 | 0.0276 | 2.0e-05 |
+| tot_hi_cred_lim | -0.3280 | 0.0332 | 5.7e-23 |
+| bc_open_to_buy | -0.5294 | 0.0369 | 1.4e-46 |
+| acc_open_past_24mths | -0.6677 | 0.0264 | 2.9e-141 |
+| dti | -0.5953 | 0.0256 | 1.9e-119 |
+| mort_acc | -0.0978 | 0.0356 | 0.0061 |
+| home_ownership | -0.3160 | 0.0355 | 4.9e-19 |
+| mo_sin_rcnt_tl | -0.1899 | 0.0344 | 3.2e-08 |
+| loan_to_income | -0.8982 | 0.0295 | 3.8e-204 |
+| mths_since_recent_inq | -0.6471 | 0.0315 | 1.7e-93 |
+| mo_sin_old_rev_tl_op | -0.2580 | 0.0324 | 1.5e-15 |
+| mths_since_recent_bc | -0.4443 | 0.0352 | 1.8e-36 |
+| bc_util | -0.2320 | 0.0545 | 2.1e-05 |
+| mo_sin_old_il_acct | -0.4284 | 0.0396 | 3.2e-27 |
+| num_actv_rev_tl | -0.3748 | 0.0448 | 5.8e-17 |
+| revol_bal | -0.1269 | 0.0589 | 0.031 |
+| purpose | -0.8721 | 0.0377 | 2.2e-118 |
+| emp_length_yrs | -0.6060 | 0.0383 | 2.2e-56 |
+
+Reading the coefficients: a single WoE feature fitted alone always receives a coefficient of exactly
+-1 (the univariate column in reports/scorecard_coefficients.csv is -1.0 throughout), so it cannot
+diagnose sign flips. The informative quantity is the multivariate coefficient relative to -1, which
+shows how much of a feature's standalone signal survives once the others are present: close to zero
+for mort_acc, annual_inc and revol_bal (largely redundant given the other features), close to -0.9
+for loan_to_income and purpose (largely independent). No coefficient exceeds -1 in magnitude.
+
+**Discrimination.**
+
+| Model | AUC train | AUC valid | AUC out-of-time | Gini out-of-time | KS train | KS valid | KS out-of-time |
+|---|---|---|---|---|---|---|---|
+| Scorecard (19 features) | 0.6722 | 0.6726 | 0.6812 | 0.3623 | 0.2492 | 0.2495 | 0.2608 |
+| fico_mean WoE alone | 0.5964 | 0.5965 | 0.6040 | 0.2081 | 0.1462 | 0.1416 | 0.1566 |
+| Benchmark: int_rate | 0.6539 | 0.6565 | 0.6826 | 0.3651 | 0.2269 | 0.2346 | 0.2689 |
+| A: without emp_length_yrs | 0.6708 | 0.6709 | 0.6789 | 0.3578 | 0.2475 | 0.2474 | 0.2561 |
+| B: payment_to_income for loan_to_income | 0.6740 | 0.6746 | 0.6835 | 0.3670 | 0.2518 | 0.2534 | 0.2641 |
+
+- Train and validation agree to 0.0004 AUC: no overfitting.
+- Out-of-time AUC is higher than in-time. This is not evidence of a better model: out-of-time
+  default rates are more spread across the score range (3.69% to 31.06% from the safest to the
+  riskiest decile, against 3.68% to 28.81% in train), and AUC depends on that spread.
+- Against the lender's own rate the scorecard is ahead in-time (AUC +0.018 on train, +0.016 on
+  validation) and level out-of-time (-0.0014 AUC, -0.008 KS). The benchmark improved by 0.029 AUC
+  from train to out-of-time, the scorecard by 0.009. The cause is not identified (possible
+  explanations: changes in the lender's pricing, or a loss of power in these features; neither is
+  verified). The rate is excluded from the model by design (Section 10).
+
+**Ablations** (delta AUC = base minus variant, so positive means the base model is better; the
+paired-bootstrap interval reflects sampling variation in the evaluation set only, since each
+variant was fitted once on train):
+
+| Variant | Split | Delta AUC | 95% interval |
+|---|---|---|---|
+| A: without emp_length_yrs | validation | +0.0017 | 0.0009 to 0.0025 |
+| A: without emp_length_yrs | out-of-time | +0.0022 | 0.0017 to 0.0027 |
+| B: payment_to_income instead of loan_to_income | validation | -0.0020 | -0.0024 to -0.0015 |
+| B: payment_to_income instead of loan_to_income | out-of-time | -0.0023 | -0.0026 to -0.0021 |
+
+- A: emp_length_yrs adds a small but statistically reliable lift. The numeric threshold for
+  "negligible" in Section 12.4 was not set before the result; the decision is in Section 15.
+- B: swapping in the price-linked ratio raises AUC by about 0.002 (coefficient -0.816 against
+  -0.898 for loan_to_income). The cost of the Section 13 exclusion is therefore small, and the
+  exclusion stands.
+
+**Calibration** (observed/expected band 0.95-1.05 from Section 12.5):
+
+| Split | Observed | Predicted | O/E | Calibration intercept | Calibration slope | Within band |
+|---|---|---|---|---|---|---|
+| Train | 13.80% | 13.80% | 1.000 | 0.000 | 1.000 | yes |
+| Validation | 13.80% | 13.79% | 1.001 | -0.002 | 0.999 | yes |
+| Out-of-time | 14.73% | 13.63% | 1.081 | 0.140 | 1.026 | no |
+
+- The out-of-time shortfall (14.73% observed against 13.63% predicted, 1.10pp) combines two
+  effects: the mean predicted PD is 0.17pp lower than in train (the applicants look slightly safer to
+  the model), while the observed bad rate is 0.93pp higher. Defaults rose although the model's
+  inputs did not worsen, which points to a factor outside the feature set.
+- By score decile the out-of-time observed rate exceeds the prediction by close to nothing in decile 1
+  (3.69% vs 3.78%) and by about 1-2pp in deciles 4-10 (decile 5: 13.01% vs 11.68%; decile 8: 20.36%
+  vs 18.10%; decile 10: 31.06% vs 29.36%). The observed rate rises at every one of the 9 decile steps,
+  so rank ordering holds. A calibration slope of 1.03 indicates that the problem is mainly the level,
+  not the shape.
+- By issue month, out-of-time O/E is 1.043 (Jul 2015), 1.042, 1.088, 1.054, 1.090, 1.138 and 1.120
+  (Jan 2016): the predicted rate falls from 14.01% to 13.09% over the window while the observed rate
+  stays between 14.15% and 15.72%, so the gap widens through the window instead of being a constant
+  shift. This bears on the recalibration plan in Section 12.5 (an intercept shift fitted on Jul-Sep
+  2015 and tested on Oct 2015 - Jan 2016), which may under-correct the later months; it is tested
+  there with the Section 12.5 pass rule unchanged.
+
+![Calibration by decile and out-of-time O/E by month](../reports/figures/scorecard_calibration.png)
+
+**Open for the final-model step:** the emp_length_yrs decision (Section 12.4), a leave-one-out check
+on validation for the weakest coefficients (mort_acc, annual_inc, revol_bal), the Section 12.5
+recalibration, then challenger models, the full validation suite, SHAP and scenario tests.
