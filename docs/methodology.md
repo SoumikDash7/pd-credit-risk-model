@@ -29,6 +29,7 @@ audit trail and listed under "Replaces".
 | Development scorecard | Unregularised logistic regression on the 19 WoE features, fitted on train; validation and out-of-time scored only | 14 | |
 | Final model | 16 features: emp_length_yrs dropped by decision, revol_bal and mort_acc dropped by the leave-one-out rule; logistic regression fitted on train | 15 | The 19-feature scorecard of Section 14 |
 | Recalibration | Intercept shift of 0.0689 log-odds fitted on Jul-Sep 2015; test O/E 1.044 on Oct 2015 - Jan 2016 (pass, band 0.95-1.05); 0.1008 fitted on all out-of-time loans stored for deployment, untested | 15 | |
+| Challenger models | XGBoost with monotone constraints is 0.0055 AUC ahead out-of-time (0.0078 on validation): small; random forest no better; unconstrained XGBoost 0.011 ahead out-of-time (diagnostic). The scorecard stays the primary model | 16 | |
 
 ---
 
@@ -170,7 +171,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-10 | 7da2c8a | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
 | 2026-10-10 | 6fd2dee | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
 | 2026-10-11 | 79a2fee | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
-| 2026-10-11 | (Section 15 commit) | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
+| 2026-10-11 | 054ba23 | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
+| 2026-10-11 | (Section 16 commit) | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
 
 ---
 
@@ -1004,6 +1006,139 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Remaining: challenger
-models, the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
 vintage), SHAP, scenario and sensitivity tests, scorecard points scaling, and the validation report.
+
+---
+
+## 16. Challenger models
+
+Script: notebooks/18_challenger_models.py. Outputs: reports/challenger_tuning.csv, challenger_metrics.csv,
+challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv,
+reports/figures/challenger_by_quarter.png and models/challenger_params.json (selected settings, column
+order, monotone directions).
+
+**Purpose.** Measure what the interpretable scorecard gives up against flexible models on the same 16
+features. The scorecard remains the primary model whatever the result (auditable, monotone bins).
+
+**Setup, fixed beforehand.**
+- Inputs: raw feature values (not WoE) with missing values left as they are; home_ownership and purpose
+  one-hot encoded with levels taken from train: 30 columns (14 numeric, 16 one-hot).
+- XGBoost with monotone constraints, each direction taken from the WoE binning on train. Lower predicted
+  default for higher fico_mean, annual_inc, tot_hi_cred_lim, bc_open_to_buy, mo_sin_rcnt_tl,
+  mths_since_recent_inq, mo_sin_old_rev_tl_op, mths_since_recent_bc, mo_sin_old_il_acct; higher predicted
+  default for higher acc_open_past_24mths, dti, loan_to_income, bc_util, num_actv_rev_tl. Fixed settings:
+  learning rate 0.05, row and column subsample 0.8, L2 penalty 10, up to 2,000 trees with early stopping on
+  validation logloss (50 rounds). Grid: depth 2, 3, 4 by minimum child weight 100, 500.
+- Random forest, unconstrained (sklearn cannot combine monotone constraints with missing values): 200
+  trees, half the rows per tree; grid minimum leaf 300, 1000 by max features 0.3, 0.6.
+- Selection on validation AUC; out-of-time scored once. Diagnostic: XGBoost refitted with the selected
+  settings and no constraints.
+- Verdict rule: the larger of the validation and out-of-time AUC gaps between the best challenger (chosen on
+  validation) and the scorecard. Below 0.01 small, 0.01 to 0.02 moderate, above 0.02 material (own
+  judgement, not a standard).
+- Expectations stated beforehand: gap below 0.01 (met); cost of the monotone constraints about 0.002 or
+  less (not met, see below).
+
+**Tuning (validation).**
+
+| Model | Settings | Trees | Validation AUC |
+|---|---|---|---|
+| XGBoost | depth 2, min child weight 100 | 966 | 0.6777 |
+| XGBoost | depth 2, min child weight 500 | 966 | 0.6766 |
+| XGBoost | depth 3, min child weight 100 | 610 | 0.6781 |
+| XGBoost | depth 3, min child weight 500 | 747 | 0.6776 |
+| XGBoost (selected) | depth 4, min child weight 100 | 426 | 0.6787 |
+| XGBoost | depth 4, min child weight 500 | 533 | 0.6780 |
+| Random forest (selected) | min leaf 300, max features 0.3 | 200 | 0.6701 |
+| Random forest | min leaf 300, max features 0.6 | 200 | 0.6700 |
+| Random forest | min leaf 1000, max features 0.3 | 200 | 0.6645 |
+| Random forest | min leaf 1000, max features 0.6 | 200 | 0.6631 |
+
+**Discrimination.**
+
+| Model | AUC train | AUC validation | AUC out-of-time | Gini validation | Gini out-of-time | KS validation | KS out-of-time |
+|---|---|---|---|---|---|---|---|
+| Scorecard (16 WoE features) | 0.6707 | 0.6708 | 0.6788 | 0.3416 | 0.3576 | 0.2464 | 0.2558 |
+| XGBoost, monotone constraints | 0.6827 | 0.6787 | 0.6843 | 0.3573 | 0.3686 | 0.2613 | 0.2641 |
+| XGBoost, no constraints | 0.7034 | 0.6839 | 0.6900 | 0.3679 | 0.3799 | 0.2712 | 0.2754 |
+| Random forest | 0.6895 | 0.6701 | 0.6778 | 0.3403 | 0.3557 | 0.2468 | 0.2562 |
+
+**Probability quality** (observed/expected is raw: no recalibration shift is applied to any model).
+
+| Model | Logloss validation | Logloss out-of-time | Brier validation | Brier out-of-time | O/E validation | O/E out-of-time |
+|---|---|---|---|---|---|---|
+| Scorecard | 0.3791 | 0.3927 | 0.1138 | 0.1193 | 1.0008 | 1.0857 |
+| XGBoost, monotone | 0.3773 | 0.3910 | 0.1134 | 0.1189 | 1.0008 | 1.0753 |
+| XGBoost, no constraints | 0.3756 | 0.3890 | 0.1129 | 0.1183 | 1.0008 | 1.0660 |
+| Random forest | 0.3798 | 0.3938 | 0.1139 | 0.1197 | 1.0003 | 1.0802 |
+
+**AUC gap, challenger minus scorecard** (paired bootstrap, 200 resamples):
+
+| Challenger | Split | Delta AUC | 95% interval |
+|---|---|---|---|
+| XGBoost, monotone | validation | +0.0078 | 0.0061 to 0.0093 |
+| XGBoost, monotone | out-of-time | +0.0055 | 0.0045 to 0.0064 |
+| Random forest | validation | -0.0007 | -0.0027 to 0.0011 |
+| Random forest | out-of-time | -0.0009 | -0.0021 to 0.0003 |
+
+**Verdict: small.** The best challenger on validation AUC is XGBoost with monotone constraints, and the
+larger of its two gaps is 0.0078, below 0.01. No interaction search is required by the rule.
+
+**Reading the results.**
+- XGBoost (monotone) is ahead of the scorecard in all 13 issue quarters of the held-out loans: by about
+  0.005 to 0.011 AUC in the ten in-time quarters and 0.005 to 0.006 in the three out-of-time quarters. The
+  out-of-time gap (+0.0055, Gini 0.369 against 0.358) is the cleaner estimate: XGBoost used validation for
+  early stopping and selection, so its validation figure is mildly optimistic, while the scorecard was not
+  tuned.
+- The random forest is not better than the scorecard on AUC and has worse logloss.
+- Cost of the monotone constraints: unconstrained minus constrained XGBoost is +0.0053 AUC on validation and
+  +0.0057 out-of-time, against the expectation of about 0.002. The unconstrained model is therefore 0.013
+  (validation) and 0.011 (out-of-time) above the scorecard, a moderate gap by the thresholds above. It was
+  not part of the verdict rule. It overfits train more (AUC 0.703 against 0.684 on validation) yet keeps its
+  edge on out-of-time loans that played no part in tuning (0.690), so part of the extra signal is real.
+  Its source is not identified. Candidates: non-monotone shapes and interactions, for example annual_inc
+  together with loan_to_income carrying loan size, which is not a feature. These are hypotheses.
+- Train-to-validation AUC gaps: scorecard 0.0001, XGBoost monotone 0.0040, XGBoost unconstrained 0.0195,
+  random forest 0.0194.
+- All four models under-predict out-of-time on the raw scale (O/E 1.066 to 1.086). The drift of Section 14
+  is therefore not specific to the logistic form, and flexible models do not remove it.
+
+**XGBoost (monotone) gain importance, % of total, aggregated by original feature:** fico_mean 21.9,
+annual_inc 14.7, purpose 13.8, acc_open_past_24mths 11.5, home_ownership 5.9, dti 5.3, tot_hi_cred_lim 4.9,
+bc_open_to_buy 4.4, loan_to_income 3.8, mo_sin_rcnt_tl 3.4, mths_since_recent_inq 3.0, mths_since_recent_bc
+1.9, mo_sin_old_rev_tl_op 1.5, mo_sin_old_il_acct 1.4, num_actv_rev_tl 1.4, bc_util 1.2.
+
+**AUC by issue quarter on held-out loans** (validation rows through 2015Q2, out-of-time from 2015Q3):
+
+| Quarter | Loans | Bad | Scorecard | XGBoost (monotone) | Random forest |
+|---|---|---|---|---|---|
+| 2013Q1 | 3,547 | 452 | 0.6621 | 0.6710 | 0.6579 |
+| 2013Q2 | 4,517 | 575 | 0.6595 | 0.6701 | 0.6597 |
+| 2013Q3 | 5,562 | 653 | 0.6568 | 0.6650 | 0.6536 |
+| 2013Q4 | 6,413 | 747 | 0.6636 | 0.6744 | 0.6601 |
+| 2014Q1 | 6,720 | 870 | 0.6551 | 0.6632 | 0.6521 |
+| 2014Q2 | 7,542 | 1,004 | 0.6635 | 0.6688 | 0.6651 |
+| 2014Q3 | 8,045 | 1,119 | 0.6720 | 0.6816 | 0.6755 |
+| 2014Q4 | 10,112 | 1,478 | 0.6713 | 0.6779 | 0.6722 |
+| 2015Q1 | 11,309 | 1,675 | 0.6739 | 0.6812 | 0.6724 |
+| 2015Q2 | 12,990 | 2,019 | 0.6817 | 0.6879 | 0.6806 |
+| 2015Q3 | 73,569 | 10,727 | 0.6790 | 0.6842 | 0.6778 |
+| 2015Q4 | 88,728 | 13,197 | 0.6780 | 0.6838 | 0.6769 |
+| 2016Q1 | 22,615 | 3,316 | 0.6825 | 0.6875 | 0.6825 |
+
+![AUC by issue quarter](../reports/figures/challenger_by_quarter.png)
+
+**Caveats.**
+- The challengers use the same 16 features, so this tests the model form. It does not test whether features
+  excluded earlier (below the IV gate or removed by the correlation filter) would add anything.
+- XGBoost was tuned on validation (early stopping and selection); the out-of-time numbers are not affected.
+- The selected XGBoost settings sit at the edge of the grid on both axes (depth 4 is the largest tried,
+  minimum child weight 100 the smallest), and validation AUC rose with depth, so deeper trees could add a
+  little; this was not explored. The random forest also chose the smallest leaf size tried (300).
+- Gain importance is summed across one-hot columns, which tends to overstate categorical features
+  (purpose), and is unreliable for correlated features; SHAP values are the intended replacement.
+
+**Next.** SHAP on the XGBoost models to locate the structure the monotone constraint removes, including a
+check of the loan-size hypothesis on validation data; then lift and gain, the confusion matrix at an agreed
+cut-off, scenario and sensitivity tests, points scaling, and the validation report.

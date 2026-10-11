@@ -1,0 +1,104 @@
+{
+ "features": [
+  "fico_mean",
+  "annual_inc",
+  "tot_hi_cred_lim",
+  "bc_open_to_buy",
+  "acc_open_past_24mths",
+  "dti",
+  "home_ownership",
+  "mo_sin_rcnt_tl",
+  "loan_to_income",
+  "mths_since_recent_inq",
+  "mo_sin_old_rev_tl_op",
+  "mths_since_recent_bc",
+  "bc_util",
+  "mo_sin_old_il_acct",
+  "num_actv_rev_tl",
+  "purpose"
+ ],
+ "columns": [
+  "fico_mean",
+  "annual_inc",
+  "tot_hi_cred_lim",
+  "bc_open_to_buy",
+  "acc_open_past_24mths",
+  "dti",
+  "mo_sin_rcnt_tl",
+  "loan_to_income",
+  "mths_since_recent_inq",
+  "mo_sin_old_rev_tl_op",
+  "mths_since_recent_bc",
+  "bc_util",
+  "mo_sin_old_il_acct",
+  "num_actv_rev_tl",
+  "home_ownership__MORTGAGE",
+  "home_ownership__OTHER",
+  "home_ownership__OWN",
+  "home_ownership__RENT",
+  "purpose__OTHER",
+  "purpose__car",
+  "purpose__credit_card",
+  "purpose__debt_consolidation",
+  "purpose__home_improvement",
+  "purpose__house",
+  "purpose__major_purchase",
+  "purpose__medical",
+  "purpose__moving",
+  "purpose__other",
+  "purpose__small_business",
+  "purpose__vacation"
+ ],
+ "levels": {
+  "home_ownership": [
+   "MORTGAGE",
+   "OTHER",
+   "OWN",
+   "RENT"
+  ],
+  "purpose": [
+   "OTHER",
+   "car",
+   "credit_card",
+   "debt_consolidation",
+   "home_improvement",
+   "house",
+   "major_purchase",
+   "medical",
+   "moving",
+   "other",
+   "small_business",
+   "vacation"
+  ]
+ },
+ "monotone_constraints": "(-1,-1,-1,-1,1,1,-1,1,-1,-1,-1,1,-1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)",
+ "xgboost": {
+  "fixed": {
+   "learning_rate": 0.05,
+   "n_estimators": 2000,
+   "subsample": 0.8,
+   "colsample_bytree": 0.8,
+   "reg_lambda": 10.0,
+   "tree_method": "hist",
+   "eval_metric": "logloss",
+   "early_stopping_rounds": 50,
+   "random_state": 0
+  },
+  "selected": {
+   "max_depth": 4,
+   "min_child_weight": 100
+  },
+  "best_n_trees": 426
+ },
+ "random_forest": {
+  "fixed": {
+   "n_estimators": 200,
+   "max_samples": 0.5,
+   "random_state": 0
+  },
+  "selected": {
+   "min_samples_leaf": 300,
+   "max_features": 0.3
+  }
+ }
+}
