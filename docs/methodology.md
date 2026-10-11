@@ -27,6 +27,8 @@ audit trail and listed under "Replaces".
 | Limitations and governance | Accepted-loans-only scope, label vs Basel definition, excluded loans, fair-lending screen, drift and recalibration plan | 12 | |
 | Variable selection | IV at least 0.02 (emp_length_yrs forced in); WoE correlation below 0.70; VIF below 5; payment_to_income excluded (embeds int_rate): 19 features | 13 | |
 | Development scorecard | Unregularised logistic regression on the 19 WoE features, fitted on train; validation and out-of-time scored only | 14 | |
+| Final model | 16 features: emp_length_yrs dropped by decision, revol_bal and mort_acc dropped by the leave-one-out rule; logistic regression fitted on train | 15 | The 19-feature scorecard of Section 14 |
+| Recalibration | Intercept shift of 0.0689 log-odds fitted on Jul-Sep 2015; test O/E 1.044 on Oct 2015 - Jan 2016 (pass, band 0.95-1.05); 0.1008 fitted on all out-of-time loans stored for deployment, untested | 15 | |
 
 ---
 
@@ -167,7 +169,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-10 | a33ebec | notebooks/13_woe_binning.py, src/woe.py | WoE/IV binning | models/woe_spec.json; reports/woe_bins.csv, reports/iv_summary.csv |
 | 2026-10-10 | 7da2c8a | notebooks/14_governance_checks.py | Label composition; excluded-loan breakdown and bounds | console output (Section 12) |
 | 2026-10-10 | 6fd2dee | notebooks/15_variable_selection.py | Variable selection (IV gate, correlation filter, VIF) | reports/variable_selection.csv, reports/woe_corr_train.csv, reports/figures/woe_correlation.png, models/selected_features.json |
-| 2026-10-11 | (Section 14 commit) | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
+| 2026-10-11 | 79a2fee | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
+| 2026-10-11 | (Section 15 commit) | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
 
 ---
 
@@ -860,3 +863,147 @@ variant was fitted once on train):
 **Open for the final-model step:** the emp_length_yrs decision (Section 12.4), a leave-one-out check
 on validation for the weakest coefficients (mort_acc, annual_inc, revol_bal), the Section 12.5
 recalibration, then challenger models, the full validation suite, SHAP and scenario tests.
+
+---
+
+## 15. Final model and recalibration
+
+Script: notebooks/17_final_model_recalibration.py. Outputs: reports/loo_validation.csv,
+reports/final_model_coefficients.csv, reports/final_model_metrics.csv, reports/recalibration.csv,
+reports/recalibration_monthly.csv, reports/recalibration_deciles.csv,
+reports/figures/final_calibration.png and models/scorecard_final.json.
+
+### 15.1 Decision: emp_length_yrs is dropped
+
+This closes the plan in Section 12.4. Reasons: the ablation showed a small lift (+0.0017 validation AUC,
+KS +0.0021), about the size accepted for the exclusion of payment_to_income; the feature's main signal
+is its Missing group (no employer information, 20.3% bad, Section 9), which could stand in for age or
+retirement and cannot be tested because the data has no age field; and its IV (0.0197) is below the
+0.02 gate. Disclosure: the out-of-time ablation (+0.0022 AUC) had already been seen. The decision rests
+on the fairness reasoning and the validation numbers, and the out-of-time result pointed the other way.
+
+### 15.2 Leave-one-out on validation
+
+Rule fixed beforehand, one pass, starting from the 18 remaining features: drop a feature if refitting on
+train without it costs less than 0.0005 validation AUC and its Wald p-value in the 18-feature model is
+above 0.01. Both conditions have to hold. Paired bootstrap of the AUC loss, 100 resamples.
+
+| Feature | Coefficient | p-value | AUC loss (validation) | 95% interval | Dropped |
+|---|---|---|---|---|---|
+| revol_bal | -0.1227 | 0.037 | -0.0001 | -0.0002 to -0.0000 | yes |
+| bc_util | -0.2267 | 3.1e-05 | -0.0000 | -0.0002 to 0.0002 | no |
+| mo_sin_old_il_acct | -0.4427 | 5.2e-29 | 0.0001 | -0.0004 to 0.0006 | no |
+| mort_acc | -0.0876 | 0.014 | 0.0002 | 0.0000 to 0.0003 | yes |
+| tot_hi_cred_lim | -0.3300 | 3.2e-23 | 0.0002 | -0.0004 to 0.0006 | no |
+| mo_sin_rcnt_tl | -0.1881 | 4.3e-08 | 0.0003 | 0.0000 to 0.0007 | no |
+| annual_inc | -0.1897 | 3.4e-12 | 0.0003 | -0.0000 to 0.0008 | no |
+| num_actv_rev_tl | -0.3550 | 2.1e-15 | 0.0004 | 0.0000 to 0.0007 | no |
+| mths_since_recent_bc | -0.4509 | 1.5e-37 | 0.0005 | 0.0000 to 0.0012 | no |
+| home_ownership | -0.3290 | 1.5e-20 | 0.0008 | 0.0003 to 0.0013 | no |
+| mo_sin_old_rev_tl_op | -0.2336 | 5.2e-13 | 0.0009 | 0.0005 to 0.0012 | no |
+| bc_open_to_buy | -0.5296 | 1.2e-46 | 0.0020 | 0.0012 to 0.0026 | no |
+| dti | -0.5894 | 3.1e-117 | 0.0022 | 0.0011 to 0.0034 | no |
+| mths_since_recent_inq | -0.6527 | 3.4e-95 | 0.0030 | 0.0019 to 0.0040 | no |
+| purpose | -0.8632 | 5.6e-116 | 0.0032 | 0.0021 to 0.0044 | no |
+| fico_mean | -0.5334 | 2.5e-173 | 0.0041 | 0.0027 to 0.0056 | no |
+| acc_open_past_24mths | -0.6693 | 4.6e-142 | 0.0046 | 0.0035 to 0.0056 | no |
+| loan_to_income | -0.9086 | 2.0e-209 | 0.0060 | 0.0046 to 0.0073 | no |
+
+- revol_bal and mort_acc met the rule. mort_acc had p = 0.0061 in the 19-feature model; its p-value rose
+  to 0.014 once emp_length_yrs was removed, which is why it qualified.
+- At least six further features (bc_util, mo_sin_old_il_acct, tot_hi_cred_lim, mo_sin_rcnt_tl, annual_inc,
+  num_actv_rev_tl) each cost under 0.0005 AUC but have very small p-values, so the conjunctive rule kept
+  them. A stricter parsimony rule would remove them; it was not applied.
+- KS losses are noisy (several are negative); the rule used AUC as pre-set.
+
+### 15.3 Final model (16 features)
+
+Logistic regression on 16 WoE features, fitted on train; intercept -1.8361; converged. All coefficients are
+negative, as expected for WoE = ln(good/bad) and target 1 = bad. The largest p-value is 0.00018 (bc_util).
+
+| Feature | Coefficient | Std. error | p-value |
+|---|---|---|---|
+| fico_mean | -0.5301 | 0.0190 | 8.3e-172 |
+| annual_inc | -0.2059 | 0.0262 | 4.0e-15 |
+| tot_hi_cred_lim | -0.3698 | 0.0308 | 3.3e-33 |
+| bc_open_to_buy | -0.5540 | 0.0343 | 1.3e-58 |
+| acc_open_past_24mths | -0.6750 | 0.0261 | 1.2e-147 |
+| dti | -0.5869 | 0.0251 | 1.5e-120 |
+| home_ownership | -0.3571 | 0.0332 | 4.9e-27 |
+| mo_sin_rcnt_tl | -0.1899 | 0.0343 | 3.2e-08 |
+| loan_to_income | -0.8987 | 0.0291 | 7.8e-210 |
+| mths_since_recent_inq | -0.6511 | 0.0315 | 6.1e-95 |
+| mo_sin_old_rev_tl_op | -0.2584 | 0.0313 | 1.4e-16 |
+| mths_since_recent_bc | -0.4523 | 0.0352 | 9.0e-38 |
+| bc_util | -0.1890 | 0.0505 | 0.00018 |
+| mo_sin_old_il_acct | -0.4484 | 0.0394 | 6.1e-30 |
+| num_actv_rev_tl | -0.3307 | 0.0422 | 4.5e-15 |
+| purpose | -0.8659 | 0.0377 | 7.5e-117 |
+
+With mort_acc removed, the mortgage-related information is carried by home_ownership and tot_hi_cred_lim,
+and annual_inc rose from -0.118 to -0.206.
+
+| Model | AUC train | AUC validation | AUC out-of-time | Gini out-of-time | KS validation | KS out-of-time |
+|---|---|---|---|---|---|---|
+| 19 features (Section 14) | 0.6722 | 0.6726 | 0.6812 | 0.3623 | 0.2495 | 0.2608 |
+| 18 features (emp_length_yrs dropped) | 0.6708 | 0.6709 | 0.6789 | 0.3578 | 0.2474 | 0.2561 |
+| Final, 16 features | 0.6707 | 0.6708 | 0.6788 | 0.3576 | 0.2464 | 0.2558 |
+
+The two leave-one-out drops cost 0.0001 AUC on validation. Against the 19-feature model the final model
+loses 0.0018 AUC on validation and 0.0024 out-of-time. Score PSI against train (decile bins): validation
+0.0000, out-of-time 0.0032, far below the 0.10 watch threshold.
+
+### 15.4 Recalibration (Section 12.5 plan)
+
+Rules fixed beforehand: shift fitted on Jul-Sep 2015 (73,569 loans); tested on Oct 2015 - Jan 2016
+(111,343 loans); intercept-only shift if the slope on the fitting window is between 0.90 and 1.10 (else
+intercept and slope); pass if test-window observed/expected lies in 0.95-1.05. If the test failed it would
+be reported as a failure and the band would not move.
+
+Calibration-window slope 1.018, so an intercept shift of 0.0689 log-odds was used. The ranking is
+unchanged (test-window AUC 0.6789 before and after).
+
+| Window | Loans | Observed | Predicted before | Predicted after | O/E before | O/E after |
+|---|---|---|---|---|---|---|
+| Validation (no shift applied) | 76,757 | 13.80% | 13.79% | - | 1.001 | - |
+| Calibration: Jul-Sep 2015 | 73,569 | 14.58% | 13.78% | 14.58% | 1.058 | 1.000 |
+| Test: Oct 2015 - Jan 2016 | 111,343 | 14.83% | 13.43% | 14.21% | 1.105 | 1.044 |
+| All out-of-time | 184,912 | 14.73% | 13.57% | 14.35% | 1.086 | 1.026 |
+
+**Result: pass.** Test-window O/E is 1.044, inside 0.95-1.05.
+
+| Issue month | Observed | O/E before | O/E after | Window |
+|---|---|---|---|---|
+| 2015-07 | 14.62% | 1.045 | 0.988 | calibration |
+| 2015-08 | 14.25% | 1.048 | 0.990 | calibration |
+| 2015-09 | 14.94% | 1.092 | 1.032 | calibration |
+| 2015-10 | 14.15% | 1.059 | 1.000 | test |
+| 2015-11 | 14.80% | 1.095 | 1.035 | test |
+| 2015-12 | 15.72% | 1.145 | 1.082 | test |
+| 2016-01 | 14.66% | 1.128 | 1.066 | test |
+
+![Recalibration results](../reports/figures/final_calibration.png)
+
+Caveats:
+- The pass is narrow. 1.044 is close to the upper edge, and two of the four test months (December 2015,
+  1.082; January 2016, 1.066) are individually above 1.05 after the shift. The gap widens through the
+  window because the predicted rate falls while the observed rate does not, so a shift fitted on earlier
+  months under-corrects later ones. The rule was set on the window as a whole.
+- By score decile in the test window, observed/expected after the shift is 0.96, 1.00, 1.01, 1.05, 1.11,
+  1.06, 1.05, 1.08, 1.02, 1.04 for deciles 1 to 10. The middle deciles remain under-predicted and the
+  safest decile is slightly over-predicted, a pattern an intercept shift cannot correct. No pass criterion
+  was set for deciles; this is descriptive.
+- The cause of the drift is not identified. The score distribution did not move (score PSI 0.003), so it
+  originates outside the feature set.
+- The out-of-time set has been used to fit the Jul-Sep shift. Discrimination metrics on it are unaffected
+  (a monotone shift leaves AUC and KS unchanged), but it no longer counts as untouched data.
+- For deployment, a shift fitted on all out-of-time loans (0.1008 log-odds) is stored in
+  models/scorecard_final.json as untested: no later data is available to test it. The recommended
+  response is monthly monitoring of observed/expected and a re-fit when it leaves the band, since a single
+  intercept is a stop-gap for drift of this kind.
+
+### 15.5 Status
+
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Remaining: challenger
+models, the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
+vintage), SHAP, scenario and sensitivity tests, scorecard points scaling, and the validation report.

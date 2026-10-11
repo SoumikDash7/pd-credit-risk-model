@@ -1,0 +1,54 @@
+{
+ "features": [
+  "fico_mean",
+  "annual_inc",
+  "tot_hi_cred_lim",
+  "bc_open_to_buy",
+  "acc_open_past_24mths",
+  "dti",
+  "home_ownership",
+  "mo_sin_rcnt_tl",
+  "loan_to_income",
+  "mths_since_recent_inq",
+  "mo_sin_old_rev_tl_op",
+  "mths_since_recent_bc",
+  "bc_util",
+  "mo_sin_old_il_acct",
+  "num_actv_rev_tl",
+  "purpose"
+ ],
+ "intercept": -1.836088419943547,
+ "coefficients": {
+  "fico_mean": -0.5301369019377721,
+  "annual_inc": -0.2058969043454974,
+  "tot_hi_cred_lim": -0.36981755087485135,
+  "bc_open_to_buy": -0.553973098000742,
+  "acc_open_past_24mths": -0.6749735791992915,
+  "dti": -0.5869053713739317,
+  "home_ownership": -0.357073866763491,
+  "mo_sin_rcnt_tl": -0.18987432462908474,
+  "loan_to_income": -0.89874679041303,
+  "mths_since_recent_inq": -0.6511254232794639,
+  "mo_sin_old_rev_tl_op": -0.258404686335593,
+  "mths_since_recent_bc": -0.45232684278619145,
+  "bc_util": -0.18904790912557384,
+  "mo_sin_old_il_acct": -0.4483639414498013,
+  "num_actv_rev_tl": -0.3307412047144434,
+  "purpose": -0.865915389168758
+ },
+ "woe_spec": "models/woe_spec.json",
+ "convention": "WoE = ln(good/bad); target 1 = bad; PD = 1 / (1 + exp(-(b0 + sum(b_i * WoE_i))))",
+ "recalibration": {
+  "method": "intercept shift",
+  "tested_design": "fitted on Jul-Sep 2015, tested on Oct 2015 - Jan 2016",
+  "tested_parameters": {
+   "shift_logodds": 0.06889111132928108
+  },
+  "test_O/E_before": 1.1047007711154928,
+  "test_O/E_after": 1.0440018129836177,
+  "passed_band": true,
+  "deployment_parameters_untested": {
+   "shift_logodds": 0.10077923854368709
+  }
+ }
+}
