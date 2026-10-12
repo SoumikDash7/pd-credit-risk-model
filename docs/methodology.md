@@ -31,6 +31,7 @@ audit trail and listed under "Replaces".
 | Recalibration | Intercept shift of 0.0689 log-odds fitted on Jul-Sep 2015; test O/E 1.044 on Oct 2015 - Jan 2016 (pass, band 0.95-1.05); 0.1008 fitted on all out-of-time loans stored for deployment, untested | 15 | |
 | Challenger models | XGBoost with monotone constraints is 0.0055 AUC ahead out-of-time (0.0078 on validation): small; random forest no better; unconstrained XGBoost 0.011 ahead out-of-time (diagnostic). The scorecard stays the primary model | 16 | |
 | SHAP analysis | Same five features lead in all three models; annual_inc and bc_util show non-monotone dependence in the unconstrained model; interactions carry about 46% of its attributed effect (31% monotone); adding loan_amnt to the scorecard gains +0.0001 AUC (not supported) | 17 | |
+| Segment calibration and capacity candidates | 9 of 156 feature bins flagged on validation (7 also in train): top income decile, bc_util extremes, lowest bc_open_to_buy, three purpose levels; no capacity candidate qualifies; the model is unchanged | 18 | |
 
 ---
 
@@ -174,7 +175,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-11 | 79a2fee | notebooks/16_scorecard.py | Logistic-regression scorecard, ablations, calibration | reports/scorecard_*.csv, reports/figures/scorecard_calibration.png, models/scorecard_params.json |
 | 2026-10-11 | 054ba23 | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
 | 2026-10-11 | 829dc4b | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
-| 2026-10-11 | (Section 17 commit) | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
+| 2026-10-11 | 8a22e67 | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
+| 2026-10-12 | (Section 18 commit) | notebooks/20_calibration_and_candidates.py | Calibration by feature decile; capacity-ratio candidates (validation only) | reports/calibration_by_feature.csv, reports/capacity_candidates.csv, reports/figures/calibration_by_feature.png |
 
 ---
 
@@ -1008,7 +1010,7 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
 vintage), scenario and sensitivity tests, scorecard points scaling, and the validation report.
 
 ---
@@ -1305,3 +1307,110 @@ the other candidate.
 
 **Next.** Calibration of the scorecard by feature decile on validation, and tests on validation of capacity-ratio
 features suggested by the interpretation above.
+
+---
+
+## 18. Segment calibration and capacity-ratio candidates
+
+Script: notebooks/20_calibration_and_candidates.py. Outputs: reports/calibration_by_feature.csv,
+reports/capacity_candidates.csv and reports/figures/calibration_by_feature.png. Only train and validation rows
+are used; out-of-time rows are not loaded.
+
+**Purpose.** Part 1 shows where the additive, monotone scorecard is mis-calibrated (the shapes and interactions
+that the SHAP analysis of Section 17 pointed to). Part 2 tests whether simple capacity-ratio features close the gap
+to the unconstrained XGBoost.
+
+**Rules fixed beforehand.**
+- Part 1: the final 16-feature scorecard on validation. Numeric features: 10 validation quantile bins plus a separate
+  Missing group; categorical features: one bin per level. Expected = mean predicted PD in the bin; the standard error
+  comes from the model variance (sum of p(1-p)). A bin is flagged if the absolute z exceeds 3 and observed/expected
+  differs from 1 by more than 5%. The same bins are computed on train as a consistency check.
+- Part 2: four candidates, each added alone to the 16-feature scorecard (refitted on train, WoE bins fitted on train
+  with the Section 11 rules): total_bc_limit (dropped earlier on correlation alone); hi_cred_lim_to_income =
+  tot_hi_cred_lim / annual_inc; bc_balance_to_income = (total_bc_limit x bc_util / 100) / annual_inc; fico_lti_cell,
+  a 3x3 cell of fico_mean tercile by loan_to_income tercile (train terciles). A candidate qualifies only if the
+  validation AUC gain is at least 0.002, the 99% paired-bootstrap interval (500 resamples; wider because there are
+  four looks) excludes 0, the coefficient is negative, and the largest absolute correlation of its WoE with the 16
+  kept features is below 0.70.
+- Expectations stated beforehand: 0 to 3 flagged bins, plausibly the top income decile and the bc_util extremes (count
+  not met, features met); at most one candidate qualifies, with a gain nearer 0.001 than 0.002 (none qualifies).
+
+### 18.1 Calibration by feature decile
+
+156 bins were tested and 9 flagged on validation (about 0.4 expected by chance at 3 standard errors); 7 of the 9
+are also flagged on train. The scorecard is fitted by maximum likelihood on train, so a misfit that appears there is
+a feature of the model form and not noise, and validation, a random draw from the same window, confirms it.
+
+| Feature and bin | Loans (validation) | Observed | Expected | Obs/exp | z | Obs/exp on train | z on train |
+|---|---|---|---|---|---|---|---|
+| annual_inc, top decile [120,000 to 506,300] | 8,476 | 9.41% | 8.29% | 1.135 | 3.80 | 1.144 | 8.07 |
+| bc_open_to_buy, lowest [0 to 285] | 7,589 | 18.90% | 16.82% | 1.124 | 4.94 | 1.075 | 6.04 |
+| bc_util, lowest [0 to 24] | 7,592 | 10.95% | 9.38% | 1.167 | 4.79 | 1.141 | 8.06 |
+| bc_util, highest [95.8 to 318.2] | 7,689 | 17.73% | 16.01% | 1.107 | 4.19 | 1.080 | 6.27 |
+| purpose: home_improvement | 4,086 | 11.97% | 10.10% | 1.185 | 4.04 | 1.189 | 8.39 |
+| purpose: major_purchase | 1,319 | 14.10% | 11.29% | 1.249 | 3.30 | 1.195 | 5.11 |
+| purpose: small_business | 716 | 23.32% | 17.91% | 1.302 | 3.88 | 1.274 | 7.20 |
+| mo_sin_rcnt_tl [0 to 1] | 7,633 | 18.46% | 17.04% | 1.084 | 3.39 | 1.017 | 1.38 |
+| mo_sin_rcnt_tl [7 to 8] | 9,328 | 12.30% | 13.73% | 0.895 | -4.12 | 0.984 | -1.25 |
+
+By feature on validation (flagged bins; largest absolute z; observed/expected range): bc_open_to_buy 1, 4.94,
+0.947 to 1.124; bc_util 2, 4.79, 0.935 to 1.167; mo_sin_rcnt_tl 2, 4.12, 0.895 to 1.084; purpose 3, 4.04, 0.893 to
+1.302; annual_inc 1, 3.80, 0.919 to 1.135. The other 11 features have no flagged bin (largest absolute z 2.83,
+mths_since_recent_inq); fico_mean ranges 0.942 to 1.052 and dti 0.979 to 1.071.
+
+![Observed over expected by feature decile](../reports/figures/calibration_by_feature.png)
+
+**Reading.**
+- The two mo_sin_rcnt_tl flags appear only on validation (train 1.017 and 0.984), so they are treated as noise.
+- The seven replicated flags cover about 10% of loans each for annual_inc, bc_open_to_buy and the two bc_util bins,
+  and about 8% for the three purpose levels together.
+- Consistency with Section 17: the monotone scorecard under-predicts the top income decile (about 0.14 log-odds) and
+  the low-utilisation end of bc_util (about 0.17 log-odds), the same bins where the unconstrained XGBoost departed
+  from monotone (+0.25 and +0.14 log-odds swings). The unconstrained model's patterns are therefore not only
+  overfitting noise. This tempers the remark in Section 17 that a rising risk at the highest incomes would need an
+  economic rationale: the data support the pattern, replicated in two samples, and the rationale is still missing. One
+  untested idea is that stated income may be less reliable at the top end (verification status is not in the model).
+- The highest-utilisation bin and the lowest bc_open_to_buy bin probably contain largely the same borrowers
+  (exhausted bankcard credit), which would fit the bc_open_to_buy x bc_util interaction found in Section 17
+  (0.0384 unconstrained against 0.0008 monotone). The overlap was not measured; this is a hypothesis.
+- The purpose misfit is of a different kind: three levels are under-predicted by 18% to 30%. Section 11 recorded that
+  the 2% minimum bin size merges house, moving and small_business into one bin; this is the cost. Purpose has
+  little effect on AUC but matters for segment-level PD, for example small business loans.
+- These are in-time findings. Whether they persist out-of-time is tested in the validation suite.
+
+### 18.2 Capacity-ratio candidates (validation only)
+
+Baseline validation AUC 0.6708 (the saved scorecard reproduces it). Gap between the unconstrained XGBoost and the
+scorecard on validation: 0.0131.
+
+| Candidate | IV (train) | Bins | Coefficient | p-value | Validation AUC | Gain | 99% interval | Max abs. correlation with kept | Share of gap |
+|---|---|---|---|---|---|---|---|---|---|
+| total_bc_limit | 0.0726 | 10 | -0.183 | 0.00011 | 0.6708 | -0.0001 | -0.0003 to 0.0002 | 0.80 | 0.0% |
+| hi_cred_lim_to_income | 0.0387 | 6 | -0.217 | 0.0001 | 0.6710 | +0.0002 | -0.0001 to 0.0004 | 0.80 | 1.2% |
+| bc_balance_to_income | 0.0018 | 3 | -1.121 | 1.1e-16 | 0.6713 | +0.0005 | -0.0000 to 0.0010 | 0.18 | 3.8% |
+| fico_lti_cell | 0.1467 | 9 | -0.010 | 0.75 | 0.6708 | 0.0000 | -0.0000 to 0.0000 | 0.77 | 0.0% |
+
+**No candidate meets all four criteria.** total_bc_limit, hi_cred_lim_to_income and fico_lti_cell fail on gain,
+interval and correlation; bc_balance_to_income passes sign and correlation and fails on gain and interval (it has 1.06%
+missing values in train, and its tiny p-value reflects the sample size, not importance). The fico_lti_cell
+coefficient is -0.010 (p = 0.75), so in this coarse 3x3 form the interaction between score and loan size adds nothing.
+The capacity-ratio hypothesis of Section 17 is therefore not supported as main-effect features; the unconstrained
+model's extra signal lies in interactions and shapes that single features cannot reproduce.
+
+### 18.3 Status and decisions
+
+- By the rules above no candidate qualifies, so the 16-feature scorecard is unchanged and its out-of-time gap to
+  the monotone XGBoost (+0.0055 AUC, Section 16) remains the price of an interpretable, monotone model.
+- The segment misfits of 18.1 are carried forward as documented limitations and tested out-of-time in the
+  validation suite.
+
+### 18.4 Remediation options (not applied; for decision)
+1. Finer purpose bins (a lower minimum bin size for this categorical feature) so small_business, major_purchase
+   and home_improvement are not pooled; this changes the model and requires re-running Sections 14 to 17.
+2. Non-monotone treatment of annual_inc, bc_util and the lowest bc_open_to_buy bin; not applied because the
+   economic rationale is missing and the patterns have only been observed in-time.
+3. Segment-level overlays or monitoring for the three purpose levels, with a re-fit trigger.
+
+**Next.** Validation suite on the frozen model with its recalibration: lift and gain, a confusion matrix at a stated
+cut-off, segment back-tests (including the 18.1 segments) and stability by vintage, then scenario and sensitivity
+tests, points scaling and the validation report.
