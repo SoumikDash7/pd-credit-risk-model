@@ -32,6 +32,7 @@ audit trail and listed under "Replaces".
 | Challenger models | XGBoost with monotone constraints is 0.0055 AUC ahead out-of-time (0.0078 on validation): small; random forest no better; unconstrained XGBoost 0.011 ahead out-of-time (diagnostic). The scorecard stays the primary model | 16 | |
 | SHAP analysis | Same five features lead in all three models; annual_inc and bc_util show non-monotone dependence in the unconstrained model; interactions carry about 46% of its attributed effect (31% monotone); adding loan_amnt to the scorecard gains +0.0001 AUC (not supported) | 17 | |
 | Segment calibration and capacity candidates | 9 of 156 feature bins flagged on validation (7 also in train): top income decile, bc_util extremes, lowest bc_open_to_buy, three purpose levels; no capacity candidate qualifies; the model is unchanged | 18 | |
+| Validation suite (frozen model) | Rank ordering and policy metrics stable out-of-time (KS 0.256; rejecting 20% captures 36% of bad loans); calibration drifts with vintage (O/E 0.91 in 2013Q4 to 1.13 in 2016Q1, 1.066 after the shift in 2016Q1); 5 of 7 segment misfits persist | 19 | |
 
 ---
 
@@ -176,7 +177,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-11 | 054ba23 | notebooks/17_final_model_recalibration.py | Leave-one-out, final model, recalibration | reports/loo_validation.csv, final_model_coefficients.csv, final_model_metrics.csv, recalibration.csv, recalibration_monthly.csv, recalibration_deciles.csv, reports/figures/final_calibration.png, models/scorecard_final.json |
 | 2026-10-11 | 829dc4b | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
 | 2026-10-11 | 8a22e67 | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
-| 2026-10-12 | (Section 18 commit) | notebooks/20_calibration_and_candidates.py | Calibration by feature decile; capacity-ratio candidates (validation only) | reports/calibration_by_feature.csv, reports/capacity_candidates.csv, reports/figures/calibration_by_feature.png |
+| 2026-10-12 | 1cd0bcd | notebooks/20_calibration_and_candidates.py | Calibration by feature decile; capacity-ratio candidates (validation only) | reports/calibration_by_feature.csv, reports/capacity_candidates.csv, reports/figures/calibration_by_feature.png |
+| 2026-10-12 | (Section 19 commit) | notebooks/21_validation_suite.py | Lift and gain, confusion matrix, segment back-tests, stability by quarter (frozen model) | reports/validation_deciles.csv, validation_confusion.csv, validation_segments.csv, validation_by_quarter.csv, reports/figures/validation_suite.png |
 
 ---
 
@@ -1010,8 +1012,7 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Remaining: the wider validation suite (lift and gain, confusion matrix at an agreed cut-off, stability by
-vintage), scenario and sensitivity tests, scorecard points scaling, and the validation report.
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Validation suite (lift and gain, confusion matrix, segment back-tests, stability by vintage): Section 19. Remaining: scenario and sensitivity tests, scorecard points scaling, and the validation report.
 
 ---
 
@@ -1414,3 +1415,153 @@ model's extra signal lies in interactions and shapes that single features cannot
 **Next.** Validation suite on the frozen model with its recalibration: lift and gain, a confusion matrix at a stated
 cut-off, segment back-tests (including the 18.1 segments) and stability by vintage, then scenario and sensitivity
 tests, points scaling and the validation report.
+
+---
+
+## 19. Validation suite on the frozen model (version 1)
+
+Script: notebooks/21_validation_suite.py. Outputs: reports/validation_deciles.csv, validation_confusion.csv,
+validation_segments.csv, validation_by_quarter.csv and reports/figures/validation_suite.png.
+
+**Status of the model.** The 16-feature scorecard of Section 15, with its intercept shift of 0.0689 log-odds, is frozen
+as version 1; the misfits of Section 18 are carried forward as documented limitations and no model change is made here.
+The script only scores. The out-of-time set is used descriptively; it has already supplied the Jul-Sep 2015 shift, so
+the clean out-of-time window for calibration statements is Oct 2015 - Jan 2016 (111,343 loans). Before anything is
+interpreted the script checks that the saved model reproduces its documented validation and out-of-time AUCs (0.6708 and
+0.6788), the shift, the test-window observed/expected (1.044) and the validation counts of all nine segments of
+script 20.
+
+**Rules fixed beforehand.**
+- Lift and gain by score decile on validation and out-of-time, with train cut points (decile 10 = riskiest).
+- Confusion matrix at a stated, illustrative cut-off (not optimised): reject if the predicted PD is at or above the
+  80th percentile of validation PD (0.1962). The same PD threshold is applied unchanged out-of-time, and a variant
+  rejects 20% of the out-of-time applicants, to separate score shift from a changed rejection share.
+- Segment back-tests on the test window with the Section 15 shift for the seven segments flagged and replicated in
+  Section 18 (annual_inc top decile, bc_open_to_buy lowest bin, bc_util lowest and highest bins, purpose levels
+  home_improvement, major_purchase and small_business) and two controls flagged on validation only (mo_sin_rcnt_tl 0-1
+  and 7-8). Relative O/E = segment O/E after the shift divided by the overall test-window O/E. A misfit persists if
+  its relative O/E is on the same side of 1 as its validation O/E and at least half as large. The rule does not allow
+  for sampling error.
+- Stability by issue quarter on held-out loans (validation rows through 2015Q2, out-of-time from 2015Q3): O/E before
+  the shift, O/E after the shift for the out-of-time quarters, AUC and score PSI against train (0.10 watch, 0.25
+  act). 2015Q3 is exactly the shift's calibration window, so its post-shift O/E is 1.000 by construction; only 2015Q4
+  and 2016Q1 test the 0.95-1.05 band.
+- Expectations stated beforehand and outcomes: rejecting 20% captures about 37% of bad loans (36.0% on validation and
+  out-of-time at the same threshold, 36.8% with the same share: slightly lower); precision around 25% (24.8% on
+  validation; 27.1% to 27.2% out-of-time, where the base rate is higher); bad rate among approved near 11% (11.04%
+  on validation); the same threshold rejects close to 20% out-of-time (19.52%); 2015Q4 inside the band and 2016Q1
+  outside (1.039 and 1.066); most of the seven replicated segments persist (5 of 7) and both controls do not (not met:
+  one control persisted).
+
+### 19.1 Lift and gain
+
+Validation: AUC 0.6708, Gini 0.3416, KS 0.2464, bad rate 13.80%. Out-of-time: AUC 0.6788, Gini 0.3576, KS 0.2558,
+bad rate 14.73%.
+
+| Decile (10 = riskiest) | Validation bad rate | Validation lift | Validation cumulative share of bad loans | Out-of-time bad rate | Out-of-time lift | Out-of-time cumulative share of bad loans |
+|---|---|---|---|---|---|---|
+| 10 | 27.96% | 2.03 | 20.44% | 31.03% | 2.11 | 21.15% |
+| 9 | 21.55% | 1.56 | 36.00% | 23.16% | 1.57 | 36.12% |
+| 8 | 18.71% | 1.36 | 49.38% | 20.41% | 1.39 | 49.32% |
+| 7 | 15.87% | 1.15 | 60.91% | 16.92% | 1.15 | 60.35% |
+| 6 | 13.50% | 0.98 | 70.69% | 14.75% | 1.00 | 70.04% |
+| 5 | 12.46% | 0.90 | 79.65% | 13.31% | 0.90 | 78.89% |
+| 4 | 10.23% | 0.74 | 87.09% | 10.99% | 0.75 | 86.14% |
+| 3 | 8.40% | 0.61 | 93.18% | 8.78% | 0.60 | 92.14% |
+| 2 | 5.96% | 0.43 | 97.50% | 6.90% | 0.47 | 97.08% |
+| 1 | 3.42% | 0.25 | 100.00% | 3.74% | 0.25 | 100.00% |
+
+The bad rate rises at every decile step in both samples. The riskiest decile carries about twice the average bad rate
+and the riskiest 20% holds 36% of all bad loans, in-time and out-of-time alike. These are ranking measures and are
+unaffected by the shift.
+
+### 19.2 Confusion matrix at the stated cut-off
+
+Reject if the predicted PD is at or above 0.1962 (0.2073 on the shifted scale; the decisions are identical). For a 20%
+out-of-time rejection share the threshold would be 0.1944.
+
+| Case | Rejected | True positives | False positives | False negatives | True negatives | Precision | Recall | Specificity | Bad rate, all | Bad rate, approved | Reduction in bad rate |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Validation, threshold from validation | 20.00% | 3,810 | 11,542 | 6,782 | 54,623 | 24.82% | 35.97% | 82.56% | 13.80% | 11.04% | 19.96% |
+| Out-of-time, same PD threshold | 19.52% | 9,818 | 26,270 | 17,422 | 131,402 | 27.21% | 36.04% | 83.34% | 14.73% | 11.71% | 20.53% |
+| Out-of-time, same 20% rejection share | 20.00% | 10,032 | 26,951 | 17,208 | 130,721 | 27.13% | 36.83% | 82.91% | 14.73% | 11.63% | 21.03% |
+
+- The score shift is small: a fixed PD threshold rejects 19.5% of out-of-time applicants and recall is unchanged (36.0%).
+- Precision is higher out-of-time because the base rate is higher. The approved book's bad rate (11.71%) is above the
+  validation figure (11.04%): the policy removes about a fifth of the bad rate but does not cure the drift.
+
+### 19.3 Segment back-tests (test window, Oct 2015 - Jan 2016)
+
+| Segment | Loans (validation) | O/E validation | z validation | Loans (test) | Observed (test) | O/E test, raw | O/E test, shifted | z shifted | Relative O/E | Persists |
+|---|---|---|---|---|---|---|---|---|---|---|
+| All loans | 76,757 | 1.001 | 0.09 | 111,343 | 14.83% | 1.105 | 1.044 | 6.13 | 1.000 | - |
+| annual_inc top decile | 8,476 | 1.135 | 3.80 | 15,263 | 10.85% | 1.280 | 1.204 | 8.06 | 1.153 | yes |
+| bc_open_to_buy lowest bin | 7,589 | 1.124 | 4.94 | 10,086 | 19.27% | 1.145 | 1.084 | 4.01 | 1.038 | no |
+| bc_util lowest bin | 7,592 | 1.167 | 4.79 | 14,579 | 12.33% | 1.296 | 1.221 | 9.18 | 1.170 | yes |
+| bc_util highest bin | 7,689 | 1.107 | 4.19 | 10,644 | 18.64% | 1.168 | 1.106 | 5.01 | 1.059 | yes |
+| purpose home_improvement | 4,086 | 1.185 | 4.04 | 7,191 | 13.87% | 1.364 | 1.286 | 8.58 | 1.231 | yes |
+| purpose major_purchase | 1,319 | 1.249 | 3.30 | 2,336 | 14.34% | 1.315 | 1.240 | 4.29 | 1.188 | yes |
+| purpose small_business | 716 | 1.302 | 3.88 | 1,047 | 22.54% | 1.267 | 1.202 | 3.23 | 1.151 | no (at the cut) |
+| Control: mo_sin_rcnt_tl 0-1 | 7,633 | 1.084 | 3.39 | 12,061 | 19.61% | 1.165 | 1.103 | 5.40 | 1.057 | yes |
+| Control: mo_sin_rcnt_tl 7-8 | 9,328 | 0.895 | -4.12 | 11,669 | 13.92% | 1.067 | 1.008 | 0.36 | 0.966 | no |
+
+Five of the seven replicated segments persist by the rule and one of the two controls does.
+- After the shift, all seven replicated segments remain under-predicted in the test window (O/E 1.08 to 1.29, z 3.2
+  to 9.2) while the overall O/E is 1.044. The top-income and low-utilisation segments are at about 1.20 and 1.22
+  after the shift, a relative misfit at least as large as in-time.
+- small_business misses the rule by a rounding-level margin (relative O/E 1.151 against 1.151 required; 1,047 loans,
+  relative standard error roughly 6% by hand), so it is better described as persisting at about half its in-time
+  size. bc_open_to_buy lowest bin is the segment that fades (relative O/E 1.038; 1.084 after the shift).
+- The control mo_sin_rcnt_tl 0-1 persisted by the rule although it was flagged only on validation (train 1.017). With
+  about 12,000 loans a relative O/E of 1.057 is roughly 3 standard errors from 1 (hand estimate), so it may be a small
+  real under-prediction. The rule ignores sampling error and is too lenient for large segments; it is not a clean
+  separator of real and spurious flags. The other control, mo_sin_rcnt_tl 7-8, is well calibrated out-of-time (1.008).
+- Segment shares of loans moved: the top income decile from 11.0% (validation) to 13.7% (test window) and the lowest
+  bc_util bin from 9.9% to 13.1%, both under-predicted segments. This is descriptive; its contribution to the
+  aggregate drift was not quantified.
+
+### 19.4 Stability by issue quarter
+
+| Quarter | Loans | Bad | Observed | Expected, raw | O/E raw | O/E after shift | AUC | Score PSI |
+|---|---|---|---|---|---|---|---|---|
+| 2013Q1 | 3,547 | 452 | 12.74% | 13.55% | 0.9405 | | 0.6621 | 0.0037 |
+| 2013Q2 | 4,517 | 575 | 12.73% | 12.98% | 0.9804 | | 0.6595 | 0.0140 |
+| 2013Q3 | 5,562 | 653 | 11.74% | 12.81% | 0.9163 | | 0.6568 | 0.0189 |
+| 2013Q4 | 6,413 | 747 | 11.65% | 12.78% | 0.9118 | | 0.6636 | 0.0236 |
+| 2014Q1 | 6,720 | 870 | 12.95% | 13.43% | 0.9641 | | 0.6551 | 0.0055 |
+| 2014Q2 | 7,542 | 1,004 | 13.31% | 13.52% | 0.9844 | | 0.6635 | 0.0022 |
+| 2014Q3 | 8,045 | 1,119 | 13.91% | 13.71% | 1.0147 | | 0.6720 | 0.0010 |
+| 2014Q4 | 10,112 | 1,478 | 14.62% | 14.58% | 1.0025 | | 0.6713 | 0.0111 |
+| 2015Q1 | 11,309 | 1,675 | 14.81% | 14.36% | 1.0314 | | 0.6739 | 0.0068 |
+| 2015Q2 | 12,990 | 2,019 | 15.54% | 14.33% | 1.0850 | | 0.6817 | 0.0073 |
+| 2015Q3 | 73,569 | 10,727 | 14.58% | 13.78% | 1.0578 | 1.0000 (calibration window) | 0.6790 | 0.0025 |
+| 2015Q4 | 88,728 | 13,197 | 14.87% | 13.53% | 1.0989 | 1.0386 (in band) | 0.6780 | 0.0031 |
+| 2016Q1 | 22,615 | 3,316 | 14.66% | 13.00% | 1.1283 | 1.0660 (outside band) | 0.6825 | 0.0156 |
+
+![Validation suite](../reports/figures/validation_suite.png)
+
+- **Calibration drifts with the vintage.** O/E before the shift is 0.91 to 0.98 in 2013, about 1.0 in 2014 and 1.03
+  to 1.13 from 2015. By hand, 2013Q3 and 2013Q4 are about 2.4 and 2.7 standard errors below 1 and 2015Q2 about 4.0
+  above. The drift seen out-of-time in Sections 14 and 15 is therefore the continuation of a vintage trend that began
+  inside the development window and not a step at the out-of-time boundary: a model calibrated to the pooled window
+  over-predicts the early vintages and under-predicts the later ones. No trend test was set beforehand.
+- **Not a change in applicant mix.** Score PSI is at most 0.024 in every quarter (0.10 = watch).
+- **The shift under-corrects as time passes.** After the shift the quarters read 1.000 (the calibration window),
+  1.039 (2015Q4, inside the band) and 1.066 (2016Q1, outside). 2016Q1 is January only and about one standard error
+  above the 1.05 edge by hand, so one failing month is weak evidence on its own; the creep upward is the point.
+- **Discrimination does not deteriorate.** AUC by quarter ranges from 0.655 to 0.683 and is higher in 2015 and
+  2016 (0.678 to 0.683) than in 2013 (0.657 to 0.664).
+
+### 19.5 Conclusions and additions to the remediation options
+
+- Version 1 ranks borrowers stably over time and keeps its policy-level behaviour out-of-time (recall 36%, rejection
+  share 19.5% at a fixed threshold). Its calibration trends with the vintage, the intercept shift is a stop-gap, and
+  the segment misfits of Section 18 largely persist.
+- Added to the options of Section 18.4 (not applied): (4) vintage-aware calibration, by recalibrating on a rolling
+  window or adding a vintage trend term, which changes the model or its calibration procedure; (5) monitoring
+  triggers for monthly observed/expected by segment, with a re-fit rule.
+- Limitations: the in-time quarters use validation rows only (a random fifth of the development window); the
+  out-of-time numbers are descriptive and 2015Q3 is not independent of the shift; hand-computed z values are
+  approximations.
+
+**Next.** Scenario and sensitivity tests, scorecard points scaling, the validation report and the README refresh.
