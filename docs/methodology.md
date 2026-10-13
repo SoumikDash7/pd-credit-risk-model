@@ -33,6 +33,7 @@ audit trail and listed under "Replaces".
 | SHAP analysis | Same five features lead in all three models; annual_inc and bc_util show non-monotone dependence in the unconstrained model; interactions carry about 46% of its attributed effect (31% monotone); adding loan_amnt to the scorecard gains +0.0001 AUC (not supported) | 17 | |
 | Segment calibration and capacity candidates | 9 of 156 feature bins flagged on validation (7 also in train): top income decile, bc_util extremes, lowest bc_open_to_buy, three purpose levels; no capacity candidate qualifies; the model is unchanged | 18 | |
 | Validation suite (frozen model) | Rank ordering and policy metrics stable out-of-time (KS 0.256; rejecting 20% captures 36% of bad loans); calibration drifts with vintage (O/E 0.91 in 2013Q4 to 1.13 in 2016Q1, 1.066 after the shift in 2016Q1); 5 of 7 segment misfits persist | 19 | |
+| Scenario and sensitivity tests | Scorecard is monotone under every adverse shock; joint adverse scenario raises mean PD by 3.06pp and the rejection share at a fixed threshold from 20.0% to 33.4%; the observed drift (0.1008 log-odds) equals about 20 FICO points; coefficients are sign-stable; a fitted intercept shift stays in band for about three months | 20 | |
 
 ---
 
@@ -178,7 +179,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-11 | 829dc4b | notebooks/18_challenger_models.py | XGBoost and random forest challengers | reports/challenger_tuning.csv, challenger_metrics.csv, challenger_deltas.csv, challenger_by_quarter.csv, challenger_xgb_importance.csv, reports/figures/challenger_by_quarter.png, models/challenger_params.json |
 | 2026-10-11 | 8a22e67 | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
 | 2026-10-12 | 1cd0bcd | notebooks/20_calibration_and_candidates.py | Calibration by feature decile; capacity-ratio candidates (validation only) | reports/calibration_by_feature.csv, reports/capacity_candidates.csv, reports/figures/calibration_by_feature.png |
-| 2026-10-12 | (Section 19 commit) | notebooks/21_validation_suite.py | Lift and gain, confusion matrix, segment back-tests, stability by quarter (frozen model) | reports/validation_deciles.csv, validation_confusion.csv, validation_segments.csv, validation_by_quarter.csv, reports/figures/validation_suite.png |
+| 2026-10-12 | f7d7aa2 | notebooks/21_validation_suite.py | Lift and gain, confusion matrix, segment back-tests, stability by quarter (frozen model) | reports/validation_deciles.csv, validation_confusion.csv, validation_segments.csv, validation_by_quarter.csv, reports/figures/validation_suite.png |
+| 2026-10-13 | (Section 20 commit) | notebooks/22_scenarios_sensitivity.py | Shocks, drift scenarios, bootstrap coefficient stability, recalibration-window sensitivity | reports/scenarios_oat.csv, scenarios_named.csv, scenarios_drift.csv, bootstrap_coefficients.csv, recalibration_windows.csv, reports/figures/scenario_sensitivity.png |
 
 ---
 
@@ -1012,7 +1014,7 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Validation suite (lift and gain, confusion matrix, segment back-tests, stability by vintage): Section 19. Remaining: scenario and sensitivity tests, scorecard points scaling, and the validation report.
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Validation suite (lift and gain, confusion matrix, segment back-tests, stability by vintage): Section 19. Scenario and sensitivity tests: Section 20. Remaining: scorecard points scaling, and the validation report.
 
 ---
 
@@ -1565,3 +1567,166 @@ Five of the seven replicated segments persist by the rule and one of the two con
   approximations.
 
 **Next.** Scenario and sensitivity tests, scorecard points scaling, the validation report and the README refresh.
+
+---
+
+## 20. Scenario and sensitivity tests
+
+Script: notebooks/22_scenarios_sensitivity.py. Outputs: reports/scenarios_oat.csv, scenarios_named.csv,
+scenarios_drift.csv, bootstrap_coefficients.csv, recalibration_windows.csv and
+reports/figures/scenario_sensitivity.png.
+
+The model is the frozen version 1 of Section 15 and is not refitted, except for the coefficient resampling of 20.4.
+Shocks and drift scenarios use the 76,757 validation loans; the window sensitivity of 20.5 uses out-of-time loans.
+Integrity checks before anything is reported: the saved model reproduces the validation AUC (0.6708), the mean
+validation PD (13.79%) and the policy threshold (0.1962); the script's own IRLS fit reproduces the saved
+coefficients (largest difference 1.1e-16); the Jul-Sep shift equals the value of Section 15.
+
+**Rules fixed beforehand.**
+1. One-at-a-time shocks: each of the 14 numeric features moves by one train standard deviation in its adverse
+   direction (taken from the WoE binning), as a pure single-feature shock, clipped to the train minimum and maximum;
+   missing values are left unchanged. Pass: every mean PD change is positive and no loan's PD falls.
+2. Named shocks, each alone and all four together: fico_mean -20 points, dti +5 points, annual_inc -10% (with
+   loan_to_income raised by 1/0.9, since the ratio is defined from income), bc_util +10 points. Reported: mean PD,
+   share at or above the fixed policy threshold of 0.1962, approval rate, mean PD of approved loans, share newly
+   rejected.
+3. Drift scenarios: log-odds shifts of 0.0689 (tested), 0.1008 (deployment) and a hypothetical 0.15 applied to
+   validation PDs, with the threshold held fixed.
+4. Coefficient stability: 200 Poisson-bootstrap refits of the coefficients on train with the WoE bins held fixed.
+   Pass: every coefficient negative in at least 95% of resamples.
+5. Window sensitivity: the intercept shift refitted on Jul, Jul-Aug, Jul-Sep and Jul-Oct 2015 out-of-time loans,
+   with observed/expected in every out-of-time month (months inside the window are in-sample) and the number of
+   months after the window that stay inside 0.95-1.05. Descriptive only.
+
+**Expectations stated beforehand and outcomes.**
+- The monotonicity check passes, and the largest effects come from fico_mean, loan_to_income, acc_open_past_24mths and
+  dti in some order: the check passes, but the largest effect is bc_open_to_buy, which was not named, and fico_mean
+  ranks fifth (partly met).
+- The joint scenario raises mean PD by several points and the rejection share well above 20%: met (+3.06pp; 33.4%).
+- The deployment shift raises mean PD by about 1.2pp and the rejection share to roughly 24%: +1.18pp met; 25.0%
+  slightly off.
+- All 16 coefficients negative in at least 99% of resamples, bc_util and mo_sin_rcnt_tl least stable: met (100%;
+  they have the two largest relative standard deviations).
+- December 2015 and January 2016 above 1.05 under every window: met.
+
+### 20.1 One-at-a-time shocks
+
+Baseline mean PD 13.79%, 20.0% of validation loans at or above the threshold. Monotonicity check: pass (no loan's
+PD falls under any shock; all 14 mean changes are positive).
+
+| Feature | Adverse direction | One-SD shock | Mean PD change (pp) | Relative change | Loans unchanged | Share rejected | Newly rejected |
+|---|---|---|---|---|---|---|---|
+| bc_open_to_buy | down | -13,513 | +2.249 | 16.3% | 7.2% | 29.7% | 9.7% |
+| acc_open_past_24mths | up | +2.90 | +2.077 | 15.1% | 2.1% | 28.7% | 8.7% |
+| loan_to_income | up | +0.104 | +1.835 | 13.3% | 14.5% | 28.1% | 8.1% |
+| dti | up | +8.14 | +1.631 | 11.8% | 2.5% | 27.1% | 7.1% |
+| fico_mean | down | -29.8 | +1.581 | 11.5% | 11.5% | 26.0% | 6.0% |
+| mths_since_recent_bc | down | -30.3 | +1.067 | 7.7% | 12.7% | 24.6% | 4.6% |
+| mths_since_recent_inq | down | -5.91 | +0.881 | 6.4% | 27.7% | 23.9% | 3.9% |
+| annual_inc | down | -46,424 | +0.847 | 6.1% | 12.4% | 23.7% | 3.7% |
+| tot_hi_cred_lim | down | -162,512 | +0.815 | 5.9% | 21.9% | 23.2% | 3.2% |
+| mo_sin_old_rev_tl_op | down | -93.9 | +0.812 | 5.9% | 8.4% | 23.5% | 3.5% |
+| mo_sin_old_il_acct | down | -52.4 | +0.775 | 5.6% | 15.1% | 23.4% | 3.4% |
+| num_actv_rev_tl | up | +3.12 | +0.532 | 3.9% | 2.3% | 22.2% | 2.2% |
+| bc_util | up | +26.8 | +0.459 | 3.3% | 3.3% | 22.0% | 2.0% |
+| mo_sin_rcnt_tl | down | -9.23 | +0.429 | 3.1% | 12.1% | 21.8% | 1.8% |
+
+The ranking depends on the shock size: a one-SD move is not equally plausible across features (annual_inc -46,424 is a
+very large cut), and 2% to 28% of loans are unchanged because of clipping at the train range or, for the features with
+a Missing bin, because missing values are not shocked. The table shows sensitivity to a plausible move, not importance
+(Section 17 covers importance).
+
+### 20.2 Named shocks and the joint scenario
+
+| Scenario | Mean PD | Change (pp) | Rejected | Approved | Mean PD of approved | Newly rejected |
+|---|---|---|---|---|---|---|
+| Baseline | 13.788% | 0 | 20.00% | 80.00% | 10.935% | 0 |
+| fico_mean -20 points | 14.991% | +1.203 | 24.70% | 75.30% | 11.545% | 4.70% |
+| dti +5 points | 14.775% | +0.986 | 24.25% | 75.75% | 11.282% | 4.25% |
+| annual_inc -10% (loan_to_income raised by 1/0.9) | 14.296% | +0.508 | 22.26% | 77.75% | 11.091% | 2.25% |
+| bc_util +10 points | 13.990% | +0.202 | 20.90% | 79.11% | 10.999% | 0.89% |
+| Joint: all four | 16.852% | +3.064 | 33.35% | 66.65% | 12.033% | 13.35% |
+
+- The joint change (+3.064pp) is above the sum of the four separate changes (+2.899pp): log-odds effects add and the
+  logistic is convex at these PD levels. The income shock acts on two model features (annual_inc and loan_to_income) by
+  design.
+- In the joint scenario the approval rate falls by 13.3 points while the mean PD of approved loans rises by 1.1pp,
+  against 3.06pp for the whole book: a fixed threshold absorbs part of the shock. This assumes no policy response and
+  no correlation structure beyond the income-to-ratio link.
+
+### 20.3 Drift scenarios
+
+| Scenario | Shift (log-odds) | Mean PD | Change (pp) | Rejected at fixed threshold | Mean PD of approved |
+|---|---|---|---|---|---|
+| No shift | 0 | 13.788% | 0 | 20.00% | 10.935% |
+| Tested shift | 0.0689 | 14.588% | +0.800 | 23.44% | 11.225% |
+| Deployment shift | 0.1008 | 14.970% | +1.182 | 25.05% | 11.362% |
+| Hypothetical | 0.15 | 15.576% | +1.788 | 27.72% | 11.556% |
+
+The deployment shift raises mean PD by 1.18pp, almost exactly the effect of every borrower losing 20 FICO points
+(+1.20pp, Section 20.2): the drift observed out-of-time has the same average effect on PD as that deterioration
+across the book. At a fixed threshold it would reject 25.0% of applicants instead of 20.0%.
+
+### 20.4 Coefficient stability
+
+200 Poisson-bootstrap refits of the coefficients on train, WoE bins held fixed. Pass: every coefficient is negative in
+100% of resamples (the criterion was 95%).
+
+| Feature | Saved coefficient | Bootstrap SD | 95% interval | Relative SD |
+|---|---|---|---|---|
+| bc_util | -0.1890 | 0.0484 | -0.2765 to -0.0845 | 25.6% |
+| mo_sin_rcnt_tl | -0.1899 | 0.0370 | -0.2567 to -0.1205 | 19.5% |
+| num_actv_rev_tl | -0.3307 | 0.0426 | -0.4020 to -0.2468 | 12.9% |
+| mo_sin_old_rev_tl_op | -0.2584 | 0.0320 | -0.3187 to -0.1919 | 12.4% |
+| annual_inc | -0.2059 | 0.0246 | -0.2603 to -0.1602 | 11.9% |
+| home_ownership | -0.3571 | 0.0326 | -0.4262 to -0.2993 | 9.1% |
+| tot_hi_cred_lim | -0.3698 | 0.0329 | -0.4289 to -0.3033 | 8.9% |
+| mo_sin_old_il_acct | -0.4484 | 0.0386 | -0.5204 to -0.3750 | 8.6% |
+| mths_since_recent_bc | -0.4523 | 0.0370 | -0.5250 to -0.3889 | 8.2% |
+| bc_open_to_buy | -0.5540 | 0.0357 | -0.6315 to -0.4926 | 6.4% |
+| mths_since_recent_inq | -0.6511 | 0.0322 | -0.7144 to -0.5953 | 4.9% |
+| purpose | -0.8659 | 0.0388 | -0.9400 to -0.7907 | 4.5% |
+| dti | -0.5869 | 0.0254 | -0.6360 to -0.5350 | 4.3% |
+| acc_open_past_24mths | -0.6750 | 0.0256 | -0.7222 to -0.6240 | 3.8% |
+| fico_mean | -0.5301 | 0.0199 | -0.5714 to -0.4927 | 3.7% |
+| loan_to_income | -0.8987 | 0.0320 | -0.9534 to -0.8337 | 3.6% |
+
+The bins are not re-estimated in each resample, so the intervals understate the full uncertainty of the scorecard.
+
+### 20.5 Sensitivity of the recalibration to its window
+
+Observed/expected by out-of-time month after an intercept shift fitted on each window (an asterisk marks months inside
+the fitting window, which are in-sample).
+
+| Window | Loans | Shift | Jul | Aug | Sep | Oct | Nov | Dec | Jan | Months after the window in band |
+|---|---|---|---|---|---|---|---|---|---|---|
+| No shift (raw) | 0 | 0 | 1.045 | 1.048 | 1.092 | 1.059 | 1.095 | 1.145 | 1.128 | not applicable |
+| Jul | 30,864 | 0.054 | 1.000* | 1.002 | 1.045 | 1.012 | 1.048 | 1.095 | 1.079 | 4 of 6 |
+| Jul-Aug | 54,803 | 0.055 | 0.999* | 1.001* | 1.044 | 1.012 | 1.047 | 1.094 | 1.078 | 3 of 5 |
+| Jul-Sep | 73,569 | 0.069 | 0.988* | 0.990* | 1.032* | 1.000 | 1.035 | 1.082 | 1.066 | 2 of 4 |
+| Jul-Oct | 106,759 | 0.069 | 0.988* | 0.990* | 1.032* | 1.000* | 1.035 | 1.082 | 1.066 | 1 of 3 |
+
+- December 2015 and January 2016 are above 1.05 under every window (largest after-window value 1.095).
+- A longer or later window does not extend the time inside the band. The raw observed/expected rises by about 0.016
+  per month (hand least-squares fit across the seven months), so the half-band of 0.05 is used up about three months
+  after the window. A fitted shift therefore needs refitting about quarterly, or a re-fit trigger in monitoring.
+- The Jul-Aug shift is close to the Jul shift because August's raw O/E (1.048) is close to July's (1.045), and the
+  Jul-Oct shift matches the Jul-Sep shift because October's raw O/E (1.059) equals the Jul-Sep pooled value (1.058).
+- Monthly O/E has a relative standard error of about 1.4% to 1.6% (hand estimate), so December (1.082 after the Jul-Sep
+  shift) is about 2 standard errors above the 1.05 edge; the conclusion rests on the trend, not on one month.
+
+![Scenarios and sensitivity](../reports/figures/scenario_sensitivity.png)
+
+### 20.6 Conclusions and caveats
+
+- No model change. The scorecard behaves monotonically and its coefficients are stable; its weakness remains the
+  calibration drift documented in Sections 14, 15 and 19.
+- The deployment shift (0.1008) is untested. The window analysis suggests re-fitting a shift quarterly or monitoring
+  monthly observed/expected with a re-fit trigger.
+- Shocks are applied to each loan independently, apart from the income-to-ratio link; a real stress would move
+  correlated features together (for example score, income and utilisation in a downturn). The threshold is held fixed,
+  so no policy response is modelled.
+- The bootstrap holds the WoE bins fixed. The window sensitivity uses seven out-of-time months; hand-computed standard
+  errors are approximations.
+
+**Next.** Scorecard points scaling, the validation report as a single document and the README refresh.
