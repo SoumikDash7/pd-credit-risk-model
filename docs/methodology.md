@@ -34,6 +34,7 @@ audit trail and listed under "Replaces".
 | Segment calibration and capacity candidates | 9 of 156 feature bins flagged on validation (7 also in train): top income decile, bc_util extremes, lowest bc_open_to_buy, three purpose levels; no capacity candidate qualifies; the model is unchanged | 18 | |
 | Validation suite (frozen model) | Rank ordering and policy metrics stable out-of-time (KS 0.256; rejecting 20% captures 36% of bad loans); calibration drifts with vintage (O/E 0.91 in 2013Q4 to 1.13 in 2016Q1, 1.066 after the shift in 2016Q1); 5 of 7 segment misfits persist | 19 | |
 | Scenario and sensitivity tests | Scorecard is monotone under every adverse shock; joint adverse scenario raises mean PD by 3.06pp and the rejection share at a fixed threshold from 20.0% to 33.4%; the observed drift (0.1008 log-odds) equals about 20 FICO points; coefficients are sign-stable; a fitted intercept shift stays in band for about three months | 20 | |
+| Points scaling | Base 600 at 50:1 good:bad odds, 20 points to double the odds; one-decimal points (integer rounding rejected: +0.31pp mean PD bias); the self-contained card reproduces all 261,669 held-out scores exactly; ten score bands rise monotonically in bad rate on validation and out-of-time | 21 | |
 
 ---
 
@@ -180,7 +181,8 @@ committed under Notebooks/; the folder was renamed to lowercase in commit 04e9fe
 | 2026-10-11 | 8a22e67 | notebooks/19_shap_analysis.py | TreeSHAP importance, dependence, interactions; loan-size test (validation only) | reports/shap_importance.csv, shap_monotonicity.csv, shap_interactions.csv, loan_size_test.csv, reports/figures/shap_importance.png, shap_profiles.png |
 | 2026-10-12 | 1cd0bcd | notebooks/20_calibration_and_candidates.py | Calibration by feature decile; capacity-ratio candidates (validation only) | reports/calibration_by_feature.csv, reports/capacity_candidates.csv, reports/figures/calibration_by_feature.png |
 | 2026-10-12 | f7d7aa2 | notebooks/21_validation_suite.py | Lift and gain, confusion matrix, segment back-tests, stability by quarter (frozen model) | reports/validation_deciles.csv, validation_confusion.csv, validation_segments.csv, validation_by_quarter.csv, reports/figures/validation_suite.png |
-| 2026-10-13 | (Section 20 commit) | notebooks/22_scenarios_sensitivity.py | Shocks, drift scenarios, bootstrap coefficient stability, recalibration-window sensitivity | reports/scenarios_oat.csv, scenarios_named.csv, scenarios_drift.csv, bootstrap_coefficients.csv, recalibration_windows.csv, reports/figures/scenario_sensitivity.png |
+| 2026-10-13 | c7dbb5a | notebooks/22_scenarios_sensitivity.py | Shocks, drift scenarios, bootstrap coefficient stability, recalibration-window sensitivity | reports/scenarios_oat.csv, scenarios_named.csv, scenarios_drift.csv, bootstrap_coefficients.csv, recalibration_windows.csv, reports/figures/scenario_sensitivity.png |
+| 2026-10-14 | (Section 21 commit) | notebooks/23_scorecard_points.py | Points scaling, score bands, independent scorer | models/scorecard_points.json, reports/scorecard_points.csv, scorecard_points_summary.csv, score_bands.csv, score_to_pd.csv, points_rounding_check.csv, reports/figures/scorecard_points.png |
 
 ---
 
@@ -1014,7 +1016,7 @@ Caveats:
 
 ### 15.5 Status
 
-Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Validation suite (lift and gain, confusion matrix, segment back-tests, stability by vintage): Section 19. Scenario and sensitivity tests: Section 20. Remaining: scorecard points scaling, and the validation report.
+Done: data, target, sample, features, binning, selection, scorecard, recalibration. Challenger models: Section 16. SHAP analysis: Section 17. Segment calibration and candidates: Section 18. Validation suite (lift and gain, confusion matrix, segment back-tests, stability by vintage): Section 19. Scenario and sensitivity tests: Section 20. Points scaling: Section 21. Remaining: the validation report and the README refresh.
 
 ---
 
@@ -1730,3 +1732,307 @@ the fitting window, which are in-sample).
   errors are approximations.
 
 **Next.** Scorecard points scaling, the validation report as a single document and the README refresh.
+
+---
+
+## 21. Scorecard points scaling
+
+Script: notebooks/23_scorecard_points.py. Outputs: models/scorecard_points.json (the self-contained scorecard card),
+reports/scorecard_points.csv, scorecard_points_summary.csv, score_bands.csv, score_to_pd.csv,
+points_rounding_check.csv and reports/figures/scorecard_points.png.
+
+**Scaling (conventions, not statistical facts).** Base score 600 at 50:1 good-to-bad odds, and 20 points to double the
+odds (PDO). Factor = 20 / ln 2 = 28.854 and Offset = 600 - Factor x ln 50 = 487.12. Score = Offset - Factor x
+log-odds of default, so a higher score is safer. Points for a bin = -Factor x coefficient x WoE; base points =
+Offset - Factor x intercept = 540.1. A loan's score is the base points plus the points of its bin on each of the 16
+features. PD = 1 / (1 + exp((score - 487.12) / 28.854)). Points come from the unshifted development model; the Section 15
+recalibration shift is documented as a conversion into points (21.5) because the deployment shift is untested.
+A linear change of the anchors would change neither the ranking nor the PD.
+
+**Checks, fixed beforehand.**
+1. The exact score maps back to the model PD (to 1e-9) and ranks identically.
+2. Points are rounded to integers, accepted if the validation AUC falls by less than 0.0005 and the mean PD changes by
+   less than 0.1pp; otherwise one-decimal points are used.
+3. An independent scorer: the card is written to models/scorecard_points.json and every validation and out-of-time loan
+   is re-scored from that file alone, without the WoE module. It must reproduce the points score exactly.
+4. Ten bands from train score deciles (band 1 = highest scores = safest); the observed bad rate should rise from band 1
+   to band 10 on validation and out-of-time.
+5. Scale: the observed log-odds of good over bad regressed on the band mean score; the implied points to double the odds
+   should lie between 18 and 22 on validation (out-of-time is descriptive).
+
+**Expectations stated beforehand and outcomes.**
+- Scores run from about 480 to 610 with a mean near 540 (partly met: minimum 477 to 480 and mean 544, but the maximum
+  reaches 627 to 636; the 1st to 99th percentiles are 504 to 597).
+- Integer rounding passes with an AUC loss under 0.0002: not met (AUC loss 0.00046; mean PD +0.31pp).
+- The independent scorer matches exactly: met.
+- Bands monotone on both splits: met.
+- Implied points to double close to 20: met (19.45).
+- Recalibration shifts of about 2 and 3 points: met (1.99 and 2.91).
+- Few borrowers score 600 or more: met (0.5% to 0.7%).
+
+### 21.1 Exactness checks
+
+- Check 1 passed: the exact score maps back to the model PD (largest difference 4.4e-16) and ranks identically.
+- Check 3 passed: the card, read back from disk, reproduces the points score of every validation and out-of-time loan
+  exactly (261,669 loans). Unseen categorical levels receive 0 points (neutral, equal to an average-risk bin); missing
+  values receive their Missing-bin points where the feature has one, and 0 otherwise.
+
+### 21.2 Rounding of points
+
+| Decimals | Split | Mean absolute score difference | Largest score difference | AUC loss | KS, exact to rounded | Mean PD change (pp) | Largest PD change (pp) |
+|---|---|---|---|---|---|---|---|
+| 0 | validation | 1.071 | 5.773 | 0.00046 | 0.2464 to 0.2421 | +0.309 | 3.047 |
+| 0 | out-of-time | 1.047 | 5.381 | 0.00042 | 0.2558 to 0.2553 | +0.289 | 3.222 |
+| 1 | validation | 0.080 | 0.419 | -0.00001 | 0.2464 to 0.2468 | -0.004 | 0.264 |
+| 1 | out-of-time | 0.080 | 0.408 | -0.00002 | 0.2558 to 0.2556 | -0.002 | 0.305 |
+
+Integer points are rejected: the AUC loss (0.00046) is just inside its limit, but the mean PD rises by 0.31pp against a
+limit of 0.1pp. The bin-level rounding errors do not cancel and shift the average score by about 0.75 points (hand
+estimate: 0.31pp divided by roughly 0.41pp per point at a 14% PD). Integer KS is also lower because of ties. One-decimal
+points are used, with base points of 540.1. A published integer card with a re-centred base would probably meet the
+tolerance; this was not tested and is not applied.
+
+### 21.3 Points table
+
+Higher points mean lower risk. Share and bad rate refer to train. Bin definitions come from Section 11; Missing means the
+feature value is absent.
+
+| Feature | Bin | Points | Share of train | Bad rate (train) |
+|---|---|---|---|---|
+| fico_mean | (-inf, 664.5] | -6.0 | 9.78% | 19.15% |
+| fico_mean | (664.5, 669.5] | -4.7 | 9.52% | 17.84% |
+| fico_mean | (669.5, 674.5] | -4.1 | 9.50% | 17.35% |
+| fico_mean | (674.5, 684.5] | -3.0 | 16.42% | 16.30% |
+| fico_mean | (684.5, 689.5] | -1.4 | 7.04% | 14.97% |
+| fico_mean | (689.5, 699.5] | +0.3 | 12.85% | 13.54% |
+| fico_mean | (699.5, 714.5] | +3.8 | 14.17% | 11.11% |
+| fico_mean | (714.5, 729.5] | +7.1 | 8.84% | 9.16% |
+| fico_mean | (729.5, 764.5] | +11.9 | 8.15% | 6.83% |
+| fico_mean | (764.5, inf) | +18.8 | 3.72% | 4.48% |
+| annual_inc | (-inf, 28524.5] | -3.0 | 6.67% | 21.04% |
+| annual_inc | (28524.5, 37091] | -2.1 | 9.92% | 18.54% |
+| annual_inc | (37091, 43499] | -1.2 | 8.77% | 16.46% |
+| annual_inc | (43499, 49502] | -0.8 | 7.76% | 15.46% |
+| annual_inc | (49502, 50003.5] | -0.6 | 3.66% | 15.04% |
+| annual_inc | (50003.5, 62986.5] | -0.2 | 15.41% | 14.12% |
+| annual_inc | (62986.5, 65193.5] | +0.4 | 4.05% | 13.11% |
+| annual_inc | (65193.5, 80007.2] | +0.9 | 14.61% | 12.15% |
+| annual_inc | (80007.2, 100106] | +1.9 | 12.75% | 10.45% |
+| annual_inc | (100106, inf) | +2.5 | 16.40% | 9.46% |
+| tot_hi_cred_lim | (-inf, 34377.5] | -3.2 | 18.73% | 17.74% |
+| tot_hi_cred_lim | (34377.5, 52023.5] | -2.3 | 13.56% | 16.52% |
+| tot_hi_cred_lim | (52023.5, 67945.5] | -1.6 | 9.05% | 15.64% |
+| tot_hi_cred_lim | (67945.5, 116796] | -0.7 | 14.61% | 14.57% |
+| tot_hi_cred_lim | (116796, 175558] | +0.6 | 10.59% | 13.18% |
+| tot_hi_cred_lim | (175558, 220630] | +1.8 | 7.58% | 11.95% |
+| tot_hi_cred_lim | (220630, 300040] | +3.4 | 10.27% | 10.42% |
+| tot_hi_cred_lim | (300040, 547772] | +5.3 | 12.66% | 8.88% |
+| tot_hi_cred_lim | (547772, inf) | +8.6 | 2.95% | 6.67% |
+| bc_open_to_buy | (-inf, 52.5] | -6.9 | 3.30% | 19.81% |
+| bc_open_to_buy | (52.5, 189.5] | -5.0 | 4.14% | 17.97% |
+| bc_open_to_buy | (189.5, 1015.5] | -3.7 | 15.78% | 16.83% |
+| bc_open_to_buy | (1015.5, 2400.5] | -2.7 | 16.21% | 15.90% |
+| bc_open_to_buy | (2400.5, 5552.5] | -0.6 | 20.75% | 14.25% |
+| bc_open_to_buy | (5552.5, 9915.5] | +2.0 | 13.76% | 12.41% |
+| bc_open_to_buy | (9915.5, 14335.5] | +4.1 | 7.60% | 11.02% |
+| bc_open_to_buy | (14335.5, 20997.5] | +5.8 | 6.54% | 10.00% |
+| bc_open_to_buy | (20997.5, 38251] | +8.3 | 6.92% | 8.68% |
+| bc_open_to_buy | (38251, inf) | +14.0 | 3.99% | 6.24% |
+| bc_open_to_buy | Missing | -3.0 | 1.00% | 16.19% |
+| acc_open_past_24mths | (-inf, 0.5] | +9.5 | 4.68% | 8.96% |
+| acc_open_past_24mths | (0.5, 1.5] | +7.7 | 10.28% | 9.73% |
+| acc_open_past_24mths | (1.5, 2.5] | +5.3 | 14.23% | 10.87% |
+| acc_open_past_24mths | (2.5, 3.5] | +2.4 | 15.69% | 12.42% |
+| acc_open_past_24mths | (3.5, 4.5] | -0.2 | 14.61% | 13.95% |
+| acc_open_past_24mths | (4.5, 5.5] | -1.6 | 12.10% | 14.81% |
+| acc_open_past_24mths | (5.5, 7.5] | -3.6 | 15.74% | 16.17% |
+| acc_open_past_24mths | (7.5, 9.5] | -7.1 | 7.48% | 18.71% |
+| acc_open_past_24mths | (9.5, 11.5] | -9.2 | 3.08% | 20.47% |
+| acc_open_past_24mths | (11.5, inf) | -11.8 | 2.12% | 22.68% |
+| dti | (-inf, 4.815] | +6.3 | 4.50% | 9.95% |
+| dti | (4.815, 8.755] | +5.0 | 10.24% | 10.62% |
+| dti | (8.755, 12.765] | +4.1 | 15.75% | 11.17% |
+| dti | (12.765, 14.545] | +2.9 | 7.97% | 11.89% |
+| dti | (14.545, 18.255] | +1.3 | 16.54% | 12.92% |
+| dti | (18.255, 21.395] | -0.5 | 12.85% | 14.16% |
+| dti | (21.395, 25.535] | -2.7 | 13.70% | 15.79% |
+| dti | (25.535, 30.505] | -5.1 | 11.52% | 17.76% |
+| dti | (30.505, 34.225] | -6.2 | 4.54% | 18.71% |
+| dti | (34.225, inf) | -10.2 | 2.39% | 22.67% |
+| home_ownership | OTHER / MORTGAGE | +2.4 | 47.07% | 11.23% |
+| home_ownership | OWN | -0.7 | 9.98% | 14.62% |
+| home_ownership | RENT | -2.1 | 42.94% | 16.42% |
+| mo_sin_rcnt_tl | (-inf, 1.5] | -1.5 | 9.94% | 17.31% |
+| mo_sin_rcnt_tl | (1.5, 3.5] | -1.0 | 20.72% | 16.10% |
+| mo_sin_rcnt_tl | (3.5, 4.5] | -0.6 | 9.20% | 15.04% |
+| mo_sin_rcnt_tl | (4.5, 6.5] | -0.1 | 15.41% | 14.01% |
+| mo_sin_rcnt_tl | (6.5, 8.5] | +0.2 | 12.11% | 13.40% |
+| mo_sin_rcnt_tl | (8.5, 12.5] | +0.8 | 14.66% | 12.12% |
+| mo_sin_rcnt_tl | (12.5, 15.5] | +1.3 | 5.88% | 11.14% |
+| mo_sin_rcnt_tl | (15.5, 19.5] | +1.9 | 4.44% | 10.21% |
+| mo_sin_rcnt_tl | (19.5, 31.5] | +2.4 | 4.95% | 9.42% |
+| mo_sin_rcnt_tl | (31.5, inf) | +3.1 | 2.69% | 8.37% |
+| loan_to_income | (-inf, 0.0416562] | +10.9 | 2.92% | 9.50% |
+| loan_to_income | (0.0416562, 0.151415] | +4.5 | 35.03% | 11.86% |
+| loan_to_income | (0.151415, 0.196894] | +2.5 | 16.20% | 12.70% |
+| loan_to_income | (0.196894, 0.236849] | +0.4 | 12.77% | 13.60% |
+| loan_to_income | (0.236849, 0.270199] | -1.9 | 8.70% | 14.69% |
+| loan_to_income | (0.270199, 0.286164] | -3.1 | 3.62% | 15.28% |
+| loan_to_income | (0.286164, 0.330187] | -6.5 | 7.45% | 17.04% |
+| loan_to_income | (0.330187, inf) | -9.2 | 13.30% | 18.58% |
+| mths_since_recent_inq | (-inf, 1.5] | -4.7 | 17.50% | 17.05% |
+| mths_since_recent_inq | (1.5, 2.5] | -2.9 | 7.93% | 15.73% |
+| mths_since_recent_inq | (2.5, 3.5] | -2.4 | 7.10% | 15.41% |
+| mths_since_recent_inq | (3.5, 4.5] | -1.7 | 6.55% | 14.89% |
+| mths_since_recent_inq | (4.5, 6.5] | -0.5 | 11.35% | 14.15% |
+| mths_since_recent_inq | (6.5, 10.5] | +1.0 | 17.07% | 13.20% |
+| mths_since_recent_inq | (10.5, 16.5] | +2.5 | 13.97% | 12.29% |
+| mths_since_recent_inq | (16.5, 19.5] | +4.2 | 4.05% | 11.35% |
+| mths_since_recent_inq | (19.5, inf) | +5.3 | 4.15% | 10.77% |
+| mths_since_recent_inq | Missing | +7.2 | 10.33% | 9.84% |
+| mo_sin_old_rev_tl_op | (-inf, 52.5] | -3.9 | 3.98% | 21.30% |
+| mo_sin_old_rev_tl_op | (52.5, 85.5] | -2.0 | 8.05% | 17.27% |
+| mo_sin_old_rev_tl_op | (85.5, 99.5] | -1.3 | 6.02% | 16.07% |
+| mo_sin_old_rev_tl_op | (99.5, 120.5] | -0.8 | 10.02% | 15.06% |
+| mo_sin_old_rev_tl_op | (120.5, 144.5] | -0.3 | 12.16% | 14.30% |
+| mo_sin_old_rev_tl_op | (144.5, 181.5] | +0.4 | 18.75% | 13.16% |
+| mo_sin_old_rev_tl_op | (181.5, 227.5] | +0.7 | 15.70% | 12.65% |
+| mo_sin_old_rev_tl_op | (227.5, 351.5] | +1.6 | 19.43% | 11.47% |
+| mo_sin_old_rev_tl_op | (351.5, inf) | +1.7 | 5.89% | 11.29% |
+| mths_since_recent_bc | (-inf, 2.5] | -3.7 | 8.44% | 17.49% |
+| mths_since_recent_bc | (2.5, 4.5] | -2.3 | 9.30% | 16.07% |
+| mths_since_recent_bc | (4.5, 8.5] | -1.4 | 15.94% | 15.10% |
+| mths_since_recent_bc | (8.5, 16.5] | -0.7 | 22.31% | 14.44% |
+| mths_since_recent_bc | (16.5, 22.5] | +0.7 | 10.18% | 13.19% |
+| mths_since_recent_bc | (22.5, 31.5] | +1.2 | 9.78% | 12.70% |
+| mths_since_recent_bc | (31.5, 50.5] | +2.3 | 9.81% | 11.80% |
+| mths_since_recent_bc | (50.5, 90.5] | +4.4 | 9.22% | 10.27% |
+| mths_since_recent_bc | (90.5, inf) | +6.5 | 4.10% | 8.87% |
+| mths_since_recent_bc | Missing | -2.3 | 0.91% | 16.02% |
+| bc_util | (-inf, 24.15] | +1.6 | 9.92% | 10.68% |
+| bc_util | (24.15, 41.15] | +1.1 | 12.10% | 11.60% |
+| bc_util | (41.15, 53.05] | +0.6 | 11.27% | 12.54% |
+| bc_util | (53.05, 63.95] | +0.2 | 11.93% | 13.39% |
+| bc_util | (63.95, 84.85] | -0.1 | 26.30% | 14.03% |
+| bc_util | (84.85, 91.95] | -0.5 | 10.56% | 15.00% |
+| bc_util | (91.95, 99.65] | -1.2 | 14.54% | 16.69% |
+| bc_util | (99.65, inf) | -2.3 | 2.31% | 19.52% |
+| bc_util | Missing | -1.1 | 1.06% | 16.27% |
+| mo_sin_old_il_acct | (-inf, 17.5] | -5.7 | 2.19% | 19.90% |
+| mo_sin_old_il_acct | (17.5, 33.5] | -4.3 | 2.91% | 18.25% |
+| mo_sin_old_il_acct | (33.5, 54.5] | -3.2 | 4.76% | 16.97% |
+| mo_sin_old_il_acct | (54.5, 74.5] | -1.9 | 5.60% | 15.60% |
+| mo_sin_old_il_acct | (74.5, 87.5] | -1.2 | 5.05% | 14.98% |
+| mo_sin_old_il_acct | (87.5, 95.5] | -0.7 | 3.80% | 14.41% |
+| mo_sin_old_il_acct | (95.5, 131.5] | +0.3 | 27.67% | 13.53% |
+| mo_sin_old_il_acct | (131.5, inf) | +1.6 | 44.23% | 12.39% |
+| mo_sin_old_il_acct | Missing | -2.7 | 3.79% | 16.48% |
+| num_actv_rev_tl | (-inf, 1.5] | +2.6 | 2.94% | 10.89% |
+| num_actv_rev_tl | (1.5, 2.5] | +1.9 | 8.23% | 11.58% |
+| num_actv_rev_tl | (2.5, 3.5] | +1.5 | 13.79% | 12.00% |
+| num_actv_rev_tl | (3.5, 4.5] | +0.9 | 15.87% | 12.77% |
+| num_actv_rev_tl | (4.5, 5.5] | +0.3 | 14.99% | 13.49% |
+| num_actv_rev_tl | (5.5, 7.5] | -0.6 | 21.86% | 14.51% |
+| num_actv_rev_tl | (7.5, 8.5] | -1.2 | 6.88% | 15.38% |
+| num_actv_rev_tl | (8.5, 10.5] | -1.6 | 8.22% | 15.94% |
+| num_actv_rev_tl | (10.5, 13.5] | -2.5 | 4.84% | 17.27% |
+| num_actv_rev_tl | (13.5, inf) | -3.6 | 2.38% | 18.90% |
+| purpose | car / credit_card | +5.0 | 25.53% | 11.60% |
+| purpose | home_improvement / major_purchase | +3.1 | 7.19% | 12.39% |
+| purpose | debt_consolidation / OTHER / vacation | -1.2 | 59.34% | 14.40% |
+| purpose | other / medical | -5.3 | 5.93% | 16.51% |
+| purpose | house / moving / small_business | -12.6 | 2.01% | 20.94% |
+
+Spread of points by feature (maximum minus minimum), a points-based measure of how much each feature can move a score:
+
+| Feature | Coefficient | Minimum points | Maximum points | Range | Share of total range |
+|---|---|---|---|---|---|
+| fico_mean | -0.5301 | -6.0 | +18.8 | 24.8 | 12.9% |
+| acc_open_past_24mths | -0.6750 | -11.8 | +9.5 | 21.3 | 11.1% |
+| bc_open_to_buy | -0.5540 | -6.9 | +14.0 | 20.9 | 10.8% |
+| loan_to_income | -0.8987 | -9.2 | +10.9 | 20.1 | 10.4% |
+| purpose | -0.8659 | -12.6 | +5.0 | 17.6 | 9.1% |
+| dti | -0.5869 | -10.2 | +6.3 | 16.5 | 8.6% |
+| mths_since_recent_inq | -0.6511 | -4.7 | +7.2 | 11.9 | 6.2% |
+| tot_hi_cred_lim | -0.3698 | -3.2 | +8.6 | 11.8 | 6.1% |
+| mths_since_recent_bc | -0.4523 | -3.7 | +6.5 | 10.2 | 5.3% |
+| mo_sin_old_il_acct | -0.4484 | -5.7 | +1.6 | 7.3 | 3.8% |
+| num_actv_rev_tl | -0.3307 | -3.6 | +2.6 | 6.2 | 3.2% |
+| mo_sin_old_rev_tl_op | -0.2584 | -3.9 | +1.7 | 5.6 | 2.9% |
+| annual_inc | -0.2059 | -3.0 | +2.5 | 5.5 | 2.9% |
+| mo_sin_rcnt_tl | -0.1899 | -1.5 | +3.1 | 4.6 | 2.4% |
+| home_ownership | -0.3571 | -2.1 | +2.4 | 4.5 | 2.3% |
+| bc_util | -0.1890 | -2.3 | +1.6 | 3.9 | 2.0% |
+
+- The largest spreads belong to fico_mean (24.8 points), acc_open_past_24mths, bc_open_to_buy, loan_to_income, purpose and
+  dti, in line with the SHAP ordering of Section 17.
+- annual_inc has two narrow bins, 49,502 to 50,003.5 (3.7% of train loans) and 62,986.5 to 65,193.5. A bin of 500 dollars
+  holding 3.7% of loans is consistent with many applicants reporting exactly 50,000 (not verified). The points
+  differences between neighbouring income bins are under one point, so the effect is small; the boundaries reflect
+  reporting at round numbers and not an economic threshold.
+- purpose pools house, moving and small_business at -12.6 points (the limitation of Section 18); home_ownership groups
+  OTHER with MORTGAGE; the Missing bin of mths_since_recent_inq (no recent inquiry) earns the highest points of that
+  feature (+7.2), consistent with its position in the monotone ordering.
+
+### 21.4 Score distribution and risk bands
+
+Points score (one-decimal points): train minimum 478.9, 1st percentile 504.8, quartiles 530.7, 543.0 and 556.5, 99th
+percentile 594.9, maximum 636.0, mean 544.3. Validation: minimum 479.6, 1st 505.2, quartiles 530.7, 543.0, 556.7, 99th
+595.0, maximum 627.2, mean 544.4. Out-of-time: minimum 477.3, 1st 504.4, quartiles 531.1, 543.7, 558.1, 99th 597.0,
+maximum 634.1, mean 545.2. The share of loans scoring 600 or more is 0.52% (train), 0.54% (validation) and 0.67%
+(out-of-time): the 50:1 anchor lies far from this portfolio, whose average odds are about 6:1.
+
+Ten bands from train score deciles (band 1 = highest scores = safest):
+
+| Band | Train score range | Validation loans | Validation observed | Validation expected | Out-of-time loans | Out-of-time observed | Out-of-time expected | Out-of-time O/E |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 570.2 to 636 | 7,751 | 3.42% | 3.86% | 21,278 | 3.75% | 3.79% | 0.99 |
+| 2 | 560.2 to 570.2 | 7,669 | 5.99% | 6.39% | 19,481 | 6.90% | 6.37% | 1.08 |
+| 3 | 553.4 to 560.2 | 7,704 | 8.41% | 8.26% | 18,647 | 8.78% | 8.26% | 1.06 |
+| 4 | 547.9 to 553.4 | 7,691 | 10.17% | 10.00% | 17,942 | 10.95% | 10.00% | 1.10 |
+| 5 | 543 to 547.9 | 7,615 | 12.53% | 11.72% | 18,104 | 13.35% | 11.73% | 1.14 |
+| 6 | 538.2 to 543 | 7,695 | 13.44% | 13.57% | 17,984 | 14.79% | 13.56% | 1.09 |
+| 7 | 533.3 to 538.2 | 7,722 | 15.94% | 15.66% | 17,803 | 16.86% | 15.65% | 1.08 |
+| 8 | 527.9 to 533.3 | 7,547 | 18.60% | 18.13% | 17,511 | 20.44% | 18.12% | 1.13 |
+| 9 | 520.6 to 527.9 | 7,662 | 21.72% | 21.53% | 17,677 | 23.19% | 21.55% | 1.08 |
+| 10 | 478.9 to 520.6 | 7,701 | 27.93% | 28.84% | 18,485 | 31.06% | 29.05% | 1.07 |
+
+- Observed bad rates rise from band 1 to band 10 at every step on validation and out-of-time (check 4: pass).
+- Out-of-time observed over expected, before any shift, is 0.99 in band 1 and between 1.06 and 1.14 in all other bands:
+  the safest tenth is well calibrated, and the drift of Sections 14, 15 and 19 sits in the rest of the score range.
+
+![Scorecard points](../reports/figures/scorecard_points.png)
+
+### 21.5 Scale check and recalibration in points
+
+- Validation: slope 0.03565 per point against the design value 0.03466; implied points to double the odds 19.45 against
+  20 (accepted range 18 to 22: pass). Out-of-time: slope 0.03567, implied 19.43 (descriptive). The realised scale is
+  about 3% steeper than designed. The estimate comes from a regression across ten band means and is approximate.
+- The tested recalibration shift of Section 15 (0.0689 log-odds) equals 1.99 points, and the untested deployment shift
+  (0.1008) equals 2.91 points: a loan scoring S has the PD of a development-model loan scoring S minus the shift in points.
+  The drift observed out-of-time therefore amounts to about two to three points of score.
+
+Score to PD (development scale, with the two shifts):
+
+| Score | PD, development | PD with tested shift | PD with deployment shift (untested) | Odds good to bad (development) |
+|---|---|---|---|---|
+| 480 | 56.14% | 57.83% | 58.60% | 0.78 : 1 |
+| 500 | 39.02% | 40.68% | 41.45% | 1.56 : 1 |
+| 520 | 24.24% | 25.53% | 26.14% | 3.13 : 1 |
+| 540 | 13.79% | 14.63% | 15.04% | 6.25 : 1 |
+| 560 | 7.41% | 7.89% | 8.13% | 12.50 : 1 |
+| 580 | 3.85% | 4.11% | 4.24% | 25.00 : 1 |
+| 600 | 1.96% | 2.10% | 2.16% | 50.00 : 1 |
+| 620 | 0.99% | 1.06% | 1.09% | 100.00 : 1 |
+
+### 21.6 Caveats
+
+- One-decimal points are the published form; the integer version fails the mean-PD tolerance (21.2).
+- The anchor (600 at 50:1) is a convention and sits far above this portfolio's typical score; only 0.5% to 0.7% of loans
+  reach 600.
+- Bin boundaries inherited from Section 11 include round-number artifacts (annual_inc) and pooled levels (purpose,
+  home_ownership); the score is only as stable as those bins.
+- The scale check and the bands use ten aggregates and out-of-time loans with the Section 14 drift; they describe the
+  score, not a new model.
+
+**Next.** The validation report as a single document, and the README refresh.
