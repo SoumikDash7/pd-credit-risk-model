@@ -195,7 +195,7 @@ Running `notebooks/06_build_target.py`:
 - **Final modeling sample: 696,232 loans**
 - **Bad rate: 14.82%** (103,165 bad / 696,232 total)
 
-Note: this bad rate is meaningfully lower than the ~21.6% naive estimate
+Note: this bad rate is meaningfully lower than the ~21.2% naive estimate
 from excluding only `Current` without a maturity filter. This is
 consistent with the survivorship bias hypothesis in Section 4 — the
 naive resolved-loan sample over-represented loans that failed quickly,

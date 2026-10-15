@@ -4,7 +4,7 @@ An end-to-end retail credit-risk project: a probability-of-default scorecard bui
 
 It is a portfolio project on public data. It is not a production credit model, and its numbers say nothing about any lender's current book.
 
-**Status:** version 1 of the scorecard is frozen and fully documented. A condensed validation report is the remaining item.
+**Status:** version 1 of the scorecard is frozen and fully documented. A developer's validation report ([docs/validation_report.md](docs/validation_report.md)) summarises the tests, findings and proposed monitoring.
 
 ## Headline results
 
@@ -28,7 +28,7 @@ An AUC near 0.68 is modest, which is what application-time data gives once the l
 
 ## Design decisions worth a reviewer's attention
 
-1. **Sample design that avoids survivorship bias.** A loan still being repaid cannot be labelled good or bad. Only loans whose full term had elapsed by the data snapshot are kept, which gives a bad rate of 14.8% in the maturity-filtered sample; a naive "all resolved loans" sample would have shown about 21.6%. The sample is then scoped to 36-month loans issued from 2013, because several bureau fields did not exist earlier and 60-month loans cannot be validated out-of-time (decision log Sections 4, 7 and 8).
+1. **Sample design that avoids survivorship bias.** A loan still being repaid cannot be labelled good or bad. Only loans whose full term had elapsed by the data snapshot are kept, which gives a bad rate of 14.8% in the maturity-filtered sample; a naive "all resolved loans" sample would have shown about 21.2%. The sample is then scoped to 36-month loans issued from 2013, because several bureau fields did not exist earlier and 60-month loans cannot be validated out-of-time (decision log Sections 4, 7 and 8).
 2. **Leakage audit.** All 151 raw columns were classified. 38 post-origination columns (payment history, recoveries, hardship and settlement fields) are excluded. The lender's grade, sub-grade and interest rate stay out of the model and serve only as a benchmark. A feature built from the instalment (payment to income) was also removed, because instalment divided by loan amount tracks the interest rate (correlation 0.9989); excluding it costs about 0.002 AUC.
 3. **Fair-lending screen.** Zip code and state are excluded, and employment length was dropped at a cost of about 0.002 AUC because it may stand in for age or retirement. The dataset has no protected-class attributes, so a disparate-impact test could not be run, and that is stated as a limitation.
 4. **Rules written before results.** Each step records its rules and expectations first, and the log records where the expectations were wrong. Out-of-time data was not used to select features, bins or hyper-parameters. One decision (dropping employment length) was made after an out-of-time ablation had been seen, and the log says so.
@@ -109,7 +109,7 @@ The download needs a Kaggle API token. Unzip it, keep accepted_2007_to_2018Q4.cs
 
 ## Documentation
 
-docs/methodology.md is the full decision log: a current-rules index, every rule and expectation written before its result, the results with tables, and an audit table mapping each script to its commit. It is long by design and meant for a reviewer who wants to check a particular decision.
+[docs/validation_report.md](docs/validation_report.md) is the short version: a developer's self-assessment with ratings, graded findings and proposed monitoring triggers. docs/methodology.md is the full decision log: a current-rules index, every rule and expectation written before its result, the results with tables, and an audit table mapping each script to its commit. It is long by design and meant for a reviewer who wants to check a particular decision.
 
 ## Data and disclaimer
 
